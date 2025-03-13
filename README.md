@@ -78,21 +78,13 @@ The analyzer performs the following steps:
 
 2. Download the script:
    ```bash
-   curl -o dockerfile_analyzer.py https://raw.githubusercontent.com/yourusername/dockerfile-analyzer/main/dockerfile_analyzer.py
+   git clone git@github.com:Patrick2402/image-verion-analyzer.git
    ```
 
 3. Make it executable:
    ```bash
-   chmod +x dockerfile_analyzer.py
+   chmod +x main.py
    ```
-
-### Docker Installation (Alternative)
-
-You can also run the analyzer using Docker:
-
-```bash
-docker run --rm -v $(pwd):/workspace yourusername/dockerfile-analyzer:latest /workspace/Dockerfile --tags
-```
 
 ## Usage
 
@@ -101,7 +93,7 @@ docker run --rm -v $(pwd):/workspace yourusername/dockerfile-analyzer:latest /wo
 To analyze a Dockerfile and check for outdated images:
 
 ```bash
-python3 dockerfile_analyzer.py /path/to/Dockerfile --tags
+python3 main.py /path/to/Dockerfile --tags
 ```
 
 This will:
@@ -153,7 +145,7 @@ The analyzer uses a combination of methods to determine the appropriate version 
 To analyze images from private registries:
 
 ```bash
-python3 dockerfile_analyzer.py Dockerfile --tags --private-registry docker-registry.company.com:5000
+python3 main.py Dockerfile --tags --private-registry docker-registry.company.com:5000
 ```
 
 This will:
@@ -172,7 +164,7 @@ internal-registry.corp.local
 And then used:
 
 ```bash
-python3 dockerfile_analyzer.py Dockerfile --tags --private-registries-file private-registries.txt
+python3 main.py Dockerfile --tags --private-registries-file private-registries.txt
 ```
 
 ### Custom Rules System
@@ -344,7 +336,7 @@ jobs:
           
       - name: Check Docker images
         run: |
-          python dockerfile_analyzer.py Dockerfile --tags --threshold 3 --rules rules.json
+          python main.py Dockerfile --tags --threshold 3 --rules rules.json
           
       - name: Notify if outdated
         if: ${{ failure() }}
@@ -366,7 +358,7 @@ check_images:
   stage: test
   script:
     - pip install packaging
-    - python dockerfile_analyzer.py Dockerfile --tags --threshold 3 --rules rules.json
+    - python main.py Dockerfile --tags --threshold 3 --rules rules.json
   rules:
     - changes:
         - Dockerfile
@@ -404,7 +396,7 @@ check_images:
 For more detailed output, set the environment variable `DEBUG=1`:
 
 ```bash
-DEBUG=1 python3 dockerfile_analyzer.py Dockerfile --tags
+DEBUG=1 python3 main.py Dockerfile --tags
 ```
 
 ## FAQ

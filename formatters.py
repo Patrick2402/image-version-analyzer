@@ -10,13 +10,14 @@ class BaseFormatter:
     def __init__(self, include_timestamp=True):
         self.include_timestamp = include_timestamp
     
-    def format(self, results, total_images):
+    def format(self, results, total_images, original_count=None):
         """
         Format the results.
         
         Args:
             results: List of image analysis results
-            total_images: Total number of images analyzed
+            total_images: Total number of images analyzed (after filtering)
+            original_count: Original number of images before filtering (optional)
             
         Returns:
             String representation of formatted results
@@ -54,13 +55,19 @@ class BaseFormatter:
     
     def get_summary(self, results):
         """Get summary stats of results"""
-        outdated = [r for r in results if r['status'] == 'OUTDATED']
-        warnings = [r for r in results if r['status'] == 'WARNING']
-        unknown = [r for r in results if r['status'] == 'UNKNOWN']
-        up_to_date = [r for r in results if r['status'] == 'UP-TO-DATE']
+        # Filter out the special IGNORED_IMAGES_SUMMARY entry if it exists
+        filtered_results = [r for r in results if r.get('status') != 'INFO']
+        
+        outdated = [r for r in filtered_results if r['status'] == 'OUTDATED']
+        warnings = [r for r in filtered_results if r['status'] == 'WARNING']
+        unknown = [r for r in filtered_results if r['status'] == 'UNKNOWN']
+        up_to_date = [r for r in filtered_results if r['status'] == 'UP-TO-DATE']
+        
+        # Find ignored images info if present
+        ignored_info = next((r for r in results if r.get('image') == 'IGNORED_IMAGES_SUMMARY'), None)
         
         return {
-            'total': len(results),
+            'total': len(filtered_results),
             'outdated': len(outdated),
             'warnings': len(warnings),
             'unknown': len(unknown),
@@ -68,14 +75,15 @@ class BaseFormatter:
             'outdated_images': outdated,
             'warning_images': warnings,
             'unknown_images': unknown,
-            'up_to_date_images': up_to_date
+            'up_to_date_images': up_to_date,
+            'ignored_info': ignored_info
         }
 
 
 class TextFormatter(BaseFormatter):
     """Format results as plain text"""
     
-    def format(self, results, total_images):
+    def format(self, results, total_images, original_count=None):
         output = []
         
         # Add timestamp
@@ -83,9 +91,26 @@ class TextFormatter(BaseFormatter):
         if timestamp:
             output.append(f"Analysis Time: {timestamp}\n")
         
-        output.append(f"Found {total_images} image(s) in Dockerfile:")
-        for i, result in enumerate(results, 1):
+        # If some images were ignored, show that
+        if original_count and original_count > total_images:
+            ignored_count = original_count - total_images
+            output.append(f"Found {original_count} image(s) in Dockerfile, {ignored_count} ignored.")
+        else:
+            output.append(f"Found {total_images} image(s) in Dockerfile:")
+        
+        # Get filtered results (exclude the special IGNORED_IMAGES_SUMMARY entry)
+        filtered_results = [r for r in results if r.get('image') != 'IGNORED_IMAGES_SUMMARY']
+        
+        # List all analyzed images
+        for i, result in enumerate(filtered_results, 1):
             output.append(f"{i}. {result['image']}")
+        
+        # Find ignored images info if present
+        ignored_info = next((r for r in results if r.get('image') == 'IGNORED_IMAGES_SUMMARY'), None)
+        if ignored_info and 'ignored_images' in ignored_info:
+            output.append("\nIgnored images:")
+            for img in ignored_info['ignored_images']:
+                output.append(f"  - {img}")
         
         output.append("\n" + "="*50)
         output.append("ANALYSIS SUMMARY")
@@ -121,12 +146,25 @@ class TextFormatter(BaseFormatter):
 class JsonFormatter(BaseFormatter):
     """Format results as JSON"""
     
-    def format(self, results, total_images):
+    def format(self, results, total_images, original_count=None):
+        # Create a copy of results excluding the special entries
+        filtered_results = [r for r in results if r.get('image') != 'IGNORED_IMAGES_SUMMARY']
+        
+        # Find ignored images info if present
+        ignored_info = next((r for r in results if r.get('image') == 'IGNORED_IMAGES_SUMMARY'), None)
+        ignored_images = ignored_info.get('ignored_images', []) if ignored_info else []
+        
         output = {
             'total_images': total_images,
-            'results': results,
+            'results': filtered_results,
             'summary': self.get_summary(results),
         }
+        
+        # Add original count and ignored images if applicable
+        if original_count and original_count > total_images:
+            output['original_count'] = original_count
+            output['ignored_count'] = original_count - total_images
+            output['ignored_images'] = ignored_images
         
         timestamp = self.get_timestamp()
         if timestamp:
@@ -138,17 +176,27 @@ class JsonFormatter(BaseFormatter):
 class CsvFormatter(BaseFormatter):
     """Format results as CSV"""
     
-    def format(self, results, total_images):
+    def format(self, results, total_images, original_count=None):
         output = io.StringIO()
         fieldnames = ['image', 'status', 'current', 'recommended', 'gap', 'message']
         
         writer = csv.DictWriter(output, fieldnames=fieldnames)
         writer.writeheader()
         
-        for result in results:
+        # Filter out special entries
+        filtered_results = [r for r in results if r.get('image') != 'IGNORED_IMAGES_SUMMARY']
+        
+        for result in filtered_results:
             # Create a new row with only the fields we want
             row = {field: result.get(field, '') for field in fieldnames}
             writer.writerow(row)
+        
+        # Add ignored images as metadata
+        ignored_info = next((r for r in results if r.get('image') == 'IGNORED_IMAGES_SUMMARY'), None)
+        if ignored_info and 'ignored_images' in ignored_info:
+            output.write("\n# Ignored Images\n")
+            for img in ignored_info['ignored_images']:
+                output.write(f"# {img}\n")
         
         return output.getvalue()
 
@@ -156,7 +204,7 @@ class CsvFormatter(BaseFormatter):
 class MarkdownFormatter(BaseFormatter):
     """Format results as Markdown"""
     
-    def format(self, results, total_images):
+    def format(self, results, total_images, original_count=None):
         output = []
         
         # Add title and timestamp
@@ -166,13 +214,32 @@ class MarkdownFormatter(BaseFormatter):
         if timestamp:
             output.append(f"*Generated on: {timestamp}*\n")
         
-        # Images found
-        output.append(f"## Found {total_images} image(s)")
+        # Find ignored images info if present
+        ignored_info = next((r for r in results if r.get('image') == 'IGNORED_IMAGES_SUMMARY'), None)
+        ignored_images = ignored_info.get('ignored_images', []) if ignored_info else []
+        
+        # Images found section with ignored count if applicable
+        if original_count and original_count > total_images:
+            ignored_count = original_count - total_images
+            output.append(f"## Found {original_count} image(s), {ignored_count} ignored")
+        else:
+            output.append(f"## Found {total_images} image(s)")
+        
+        # Get filtered results (exclude special entries)
+        filtered_results = [r for r in results if r.get('image') != 'IGNORED_IMAGES_SUMMARY']
         
         output.append("| # | Image |")
         output.append("| --- | --- |")
-        for i, result in enumerate(results, 1):
+        for i, result in enumerate(filtered_results, 1):
             output.append(f"| {i} | `{result['image']}` |")
+        
+        # Add ignored images section if applicable
+        if ignored_images:
+            output.append("\n## Ignored Images")
+            output.append("| # | Image |")
+            output.append("| --- | --- |")
+            for i, img in enumerate(ignored_images, 1):
+                output.append(f"| {i} | `{img}` |")
         
         # Summary
         output.append("\n## Analysis Summary")
@@ -184,7 +251,7 @@ class MarkdownFormatter(BaseFormatter):
         output.append("| Image | Status | Current | Recommended | Gap | Message |")
         output.append("| --- | --- | --- | --- | --- | --- |")
         
-        for result in results:
+        for result in filtered_results:
             status_emoji = "✅" if result['status'] == 'UP-TO-DATE' else "⛔" if result['status'] == 'OUTDATED' else "⚠️" if result['status'] == 'WARNING' else "❓"
             
             current = result.get('current', 'N/A')
@@ -216,7 +283,12 @@ class MarkdownFormatter(BaseFormatter):
 class HtmlFormatter(BaseFormatter):
     """Format results as HTML"""
     
-    def format(self, results, total_images):
+    def format(self, results, total_images, original_count=None):
+        # Get filtered results and ignored images
+        filtered_results = [r for r in results if r.get('image') != 'IGNORED_IMAGES_SUMMARY']
+        ignored_info = next((r for r in results if r.get('image') == 'IGNORED_IMAGES_SUMMARY'), None)
+        ignored_images = ignored_info.get('ignored_images', []) if ignored_info else []
+        
         summary = self.get_summary(results)
         timestamp = self.get_timestamp()
         
@@ -233,14 +305,17 @@ class HtmlFormatter(BaseFormatter):
             .danger { background-color: #f2dede; }
             .warning { background-color: #fcf8e3; }
             .unknown { background-color: #e7e7e7; }
+            .info { background-color: #d9edf7; }
             .success-text { color: #3c763d; }
             .danger-text { color: #a94442; }
             .warning-text { color: #8a6d3b; }
+            .info-text { color: #31708f; }
             .badge { padding: 3px 8px; border-radius: 3px; font-size: 0.8em; color: white; display: inline-block; }
             .badge-success { background-color: #5cb85c; }
             .badge-danger { background-color: #d9534f; }
             .badge-warning { background-color: #f0ad4e; }
             .badge-unknown { background-color: #777; }
+            .badge-info { background-color: #5bc0de; }
             pre { background-color: #f5f5f5; padding: 10px; border-radius: 4px; }
             .container { display: flex; justify-content: space-between; }
             .summary { flex: 1; margin-right: 20px; }
@@ -270,7 +345,15 @@ class HtmlFormatter(BaseFormatter):
         html.append("<div class='container'>")
         html.append("<div class='summary'>")
         html.append(f"<h2>Summary</h2>")
-        html.append(f"<p>Found <strong>{total_images}</strong> image(s) in Dockerfile</p>")
+        
+        # If some images were ignored, show that
+        if original_count and original_count > total_images:
+            ignored_count = original_count - total_images
+            html.append(f"<p>Found <strong>{original_count}</strong> image(s) in Dockerfile:</p>")
+            html.append(f"<p><span class='badge badge-info'>Ignored</span> <strong>{ignored_count}</strong> images</p>")
+        else:
+            html.append(f"<p>Found <strong>{total_images}</strong> image(s) in Dockerfile</p>")
+        
         html.append("<ul>")
         html.append(f"<li><span class='badge badge-success'>Up-to-date</span> {summary['up_to_date']} images</li>")
         html.append(f"<li><span class='badge badge-danger'>Outdated</span> {summary['outdated']} images</li>")
@@ -292,19 +375,28 @@ class HtmlFormatter(BaseFormatter):
         html.append("</div>")
         
         # Images table
-        html.append("<h2>Images Found</h2>")
+        html.append("<h2>Images Analyzed</h2>")
         html.append("<table>")
         html.append("<tr><th>#</th><th>Image</th></tr>")
-        for i, result in enumerate(results, 1):
+        for i, result in enumerate(filtered_results, 1):
             html.append(f"<tr><td>{i}</td><td><code>{result['image']}</code></td></tr>")
         html.append("</table>")
+        
+        # Ignored images table if applicable
+        if ignored_images:
+            html.append("<h2>Ignored Images</h2>")
+            html.append("<table>")
+            html.append("<tr><th>#</th><th>Image</th></tr>")
+            for i, img in enumerate(ignored_images, 1):
+                html.append(f"<tr><td>{i}</td><td><code>{img}</code></td></tr>")
+            html.append("</table>")
         
         # Detailed results
         html.append("<h2>Detailed Results</h2>")
         html.append("<table>")
         html.append("<tr><th>Image</th><th>Status</th><th>Current</th><th>Recommended</th><th>Gap</th><th>Message</th></tr>")
         
-        for result in results:
+        for result in filtered_results:
             status_class = ""
             if result['status'] == 'UP-TO-DATE':
                 status_class = "success"

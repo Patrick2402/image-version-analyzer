@@ -7,6 +7,7 @@ import urllib.request
 from packaging import version
 from collections import defaultdict
 from formatters import get_formatter
+from image_ignore import parse_ignore_options
 
 # Import the original functions
 from dockerfile_parser import extract_base_images
@@ -30,6 +31,11 @@ def main():
         print("  --report-file PATH: Save analysis results to specified file")
         print("  --no-timestamp: Do not include timestamp in the report")
         
+        # Add ignore options
+        print("\nImage Ignore Options:")
+        print("  --ignore PATTERN: Ignore specific image pattern (wildcards supported, can be specified multiple times)")
+        print("  --ignore-images FILE: Path to file containing list of images to ignore")
+        
         print("\nExample rules.json format:")
         print('''
 {
@@ -43,6 +49,16 @@ def main():
     "level": 1
   }
 }
+''')
+        print("\nExample ignore file format:")
+        print('''
+# Lines starting with # are comments
+# Each line is a pattern to ignore
+# Wildcard (*) is supported
+python:3.9*
+nginx:1.1*
+# Use regex: prefix for regex patterns
+regex:^debian:(?!11).*
 ''')
         return
     
@@ -66,6 +82,9 @@ def main():
                 custom_rules = load_custom_rules(rules_file)
         except ValueError:
             pass
+    
+    # Parse ignore options
+    ignore_manager = parse_ignore_options(sys.argv)
     
     # Parse threshold argument
     threshold = 3  # Default threshold
@@ -125,8 +144,32 @@ def main():
         print("No valid images found in Dockerfile.")
         sys.exit(1)
     
-    # List images found in dockerfile but don't print yet if using non-text output
+    # Filter out ignored images
+    original_count = len(image_info_list)
+    filtered_image_info_list = []
+    ignored_images = []
+    
+    for info in image_info_list:
+        if ignore_manager.should_ignore(info['image']):
+            ignored_images.append(info['image'])
+        else:
+            filtered_image_info_list.append(info)
+    
+    # Print information about ignored images
+    if ignored_images:
+        print(f"Ignoring {len(ignored_images)} image(s):")
+        for img in ignored_images:
+            print(f"  - {img}")
+    
+    if not filtered_image_info_list:
+        print("All images are ignored. Nothing to analyze.")
+        sys.exit(0)
+    
+    # Update image_info_list to filtered version
+    image_info_list = filtered_image_info_list
     total_images = len(image_info_list)
+    
+    # List images found in dockerfile but don't print yet if using non-text output
     if output_format == 'text':
         print(f"Found {total_images} image{'s' if total_images > 1 else ''} in Dockerfile:")
         for i, info in enumerate(image_info_list, 1):
@@ -169,9 +212,18 @@ def main():
             sys.stdout.close()
             sys.stdout = original_stdout
     
+    # Add ignored images info to the summary if any were ignored
+    if ignored_images:
+        all_results.append({
+            'image': 'IGNORED_IMAGES_SUMMARY',
+            'status': 'INFO',
+            'message': f"{len(ignored_images)} image(s) were ignored",
+            'ignored_images': ignored_images
+        })
+    
     # Create formatter and generate output
     formatter = get_formatter(output_format, include_timestamp=include_timestamp)
-    formatted_output = formatter.format(all_results, total_images)
+    formatted_output = formatter.format(all_results, total_images, original_count)
     
     # Save to file if specified
     if report_file:

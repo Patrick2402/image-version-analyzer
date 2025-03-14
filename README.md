@@ -1,209 +1,121 @@
-# Dockerfile Analyzer
+# Docker Image Version Analyzer
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
-![Python](https://img.shields.io/badge/python-3.6%2B-green.svg)
-![License](https://img.shields.io/badge/license-MIT-orange.svg)
-
-A powerful, intelligent tool for analyzing Docker images in your Dockerfile and detecting outdated versions. Designed for DevOps teams, CI/CD pipelines, and security compliance checks.
-
-## Table of Contents
-
-- [Overview](#overview)
-- [Key Features](#key-features)
-- [How It Works](#how-it-works)
-- [Installation](#installation)
-- [Usage](#usage)
-  - [Option 1: Command Line Interface](#option-1-command-line-interface)
-  - [Option 2: Graphical User Interface](#option-2-graphical-user-interface)
-  - [Command Line Options](#command-line-options)
-  - [Exit Codes](#exit-codes)
-- [Advanced Features](#advanced-features)
-  - [Version Detection Algorithms](#version-detection-algorithms)
-  - [Working with Private Registries](#working-with-private-registries)
-  - [Custom Rules System](#custom-rules-system)
-  - [Multi-stage Dockerfile Support](#multi-stage-dockerfile-support)
-- [Example Outputs](#example-outputs)
-- [Integration with CI/CD](#integration-with-cicd)
-- [Known Limitations](#known-limitations)
-- [Troubleshooting](#troubleshooting)
-- [FAQ](#faq)
-- [Contributing](#contributing)
-- [License](#license)
-
-## Overview
-
-Dockerfile Analyzer is a Python-based tool that scans your Dockerfile for base images, connects to Docker Hub (and potentially other registries in the future), and determines if your images are outdated. It intelligently understands different versioning schemes and can apply custom rules to specific images.
-
-The tool provides actionable feedback that can be used in CI/CD pipelines to enforce image update policies or simply to help keep your Docker images up-to-date.
-
-## Key Features
-
-- **Comprehensive Dockerfile Analysis**: Parses and extracts all base images, including multi-stage builds
-- **Intelligent Version Comparison**: Automatically detects versioning schemes (major.minor.patch, year.month, etc.)
-- **Smart Image Classification**: Recognizes common image types and applies appropriate version level comparisons
-- **Custom Rules Engine**: Define specific rules for images with unique update patterns (LTS releases, etc.)
-- **Private Registry Support**: Works with images from private registries
-- **Detailed Reporting**: Provides comprehensive output on image status with specific upgrade recommendations
-- **CI/CD Integration**: Exit codes designed for pipeline integration with customizable thresholds
-- **Multiple Interfaces**: Use either the command line interface or graphical user interface
-
-## How It Works
-
-The analyzer performs the following steps:
-
-1. **Extraction**: Parses the Dockerfile to identify all base images
-2. **Analysis**: For each image:
-   - Determines the base image name and tag
-   - Removes private registry prefix if needed
-   - Queries Docker Hub API for available tags
-   - Applies intelligent filtering to identify version tags
-   - Detects the appropriate version comparison level
-   - Applies any custom rules specific to the image
-   - Calculates the version gap between current and latest versions
-3. **Reporting**: Provides detailed, actionable output with status indicators
-4. **Evaluation**: Returns appropriate exit code based on findings and configured thresholds
+A tool for analyzing Docker images in Dockerfiles to identify outdated versions.
 
 ## Installation
 
-### Prerequisites
-
-- Python 3.6 or higher
-- Required Python packages:
-  - `packaging` (for semantic version comparison)
-  - `PyQt5` (for GUI version only)
-
-### Installation Steps
-
-1. Install the required Python package:
-   ```bash
-   # For CLI version only
-   pip install packaging
-   
-   # For GUI version
-   pip install -r requirements.txt
-   ```
-
-2. Download the script:
-   ```bash
-   git clone git@github.com:Patrick2402/image-verion-analyzer.git
-   ```
-
-3. Make it executable:
-   ```bash
-   chmod +x main.py
-   ```
+```bash
+pip install image-version-analyzer
+```
 
 ## Usage
-
-You have two options for using Dockerfile Analyzer:
-
-### Option 1: Command Line Interface
-
-The command line interface is perfect for CI/CD pipelines, automation scripts, or users who prefer terminal-based tools.
-
-To analyze a Dockerfile and check for outdated images:
-
 ```bash
-python3 main.py /path/to/Dockerfile --tags
+python3 main.py <path_to_Dockerfile> [options]
 ```
 
-This will:
-1. Extract all base images from the Dockerfile
-2. Check available tags from Docker Hub
-3. Identify the latest version for each image
-4. Show how far behind your current version is
-5. Exit with status code 1 if any image is outdated beyond the default threshold (3 versions)
+## Options
 
-### Option 2: Graphical User Interface
-
-The GUI version provides a user-friendly interface for those who prefer visual analysis and interaction.
-
-![GUI Preview](gui.svg)
-
-To start the GUI:
-
-```bash
-python gui.py
+### General Options
+```
+  --tags                       Show available tags for images
+  --threshold N                Set the version gap threshold for marking images as outdated (default: 3)
+  --level N                    Force specific version level for comparison (1=major, 2=minor, 3=patch)
+  --private-registry [REGISTRY] Mark images from specified private registry
+  --private-registries-file FILE File containing list of private registries
+  --rules FILE                 JSON file with custom rules for specific images
 ```
 
-The GUI features:
-- Dockerfile selection via a file browser
-- Configuration controls for threshold and version level
-- Input fields for private registries
-- Real-time analysis logs
-- Color-coded results table
-- Easy-to-read status indicators
-
-### Command Line Options
-
-The analyzer supports the following command line options:
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--tags` | Show available tags for images | Required |
-| `--threshold N` | Set the version gap threshold for marking images as outdated | 3 |
-| `--level N` | Force specific version level for comparison (1=major, 2=minor, 3=patch) | Auto-detected |
-| `--private-registry REGISTRY` | Specify a private registry to handle | None |
-| `--private-registries-file FILE` | File containing list of private registries | None |
-| `--rules FILE` | JSON file with custom rules for specific images | None |
-
-### Exit Codes
-
-| Code | Meaning |
-|------|---------|
-| 0 | Success - All images are up-to-date or within threshold |
-| 1 | Warning - At least one image is outdated beyond threshold |
-
-## Advanced Features
-
-### Version Detection Algorithms
-
-The analyzer uses a combination of methods to determine the appropriate version comparison level:
-
-1. **Knowledge Base**: Contains predefined rules for common images:
-   - `debian`, `ubuntu`, `centos`, `node` → Level 1 (major version)
-   - `alpine`, `nginx`, `python`, `php`, `golang` → Level 2 (minor version)
-
-2. **Pattern Analysis**: For unknown images, analyzes available tags to determine the common versioning pattern:
-   - Extracts version numbers from tags
-   - Compares frequency of changes between major/minor/patch
-   - Identifies the most significant changing part
-
-3. **Custom Rules**: Applies any user-defined rules that override automatic detection
-
-### Working with Private Registries
-
-To analyze images from private registries:
-
-```bash
-python3 main.py Dockerfile --tags --private-registry docker-registry.company.com:5000
+### Output Options
+```
+  --output FORMAT              Specify output format (text, json, html, csv, markdown)
+  --report-file PATH           Save analysis results to specified file
+  --no-timestamp               Do not include timestamp in the report
 ```
 
-This will:
-1. Identify images with the specified registry prefix
-2. Remove the prefix for lookups in Docker Hub
-3. Compare versions based on public equivalent
-
-Multiple registries can be specified using a file:
-
+### Image Ignore Options
 ```
-# private-registries.txt
-docker-registry.company.com:5000
-internal-registry.corp.local
+  --ignore PATTERN             Ignore specific image pattern (wildcards supported, can be specified multiple times)
+  --ignore-images FILE         Path to file containing list of images to ignore
 ```
 
-And then used:
-
-```bash
-python3 main.py Dockerfile --tags --private-registries-file private-registries.txt
+### Slack Notification Options
+```
+  --slack-notify               Send notification to Slack about analysis results
+  --slack-webhook URL          Webhook URL for Slack notifications (can also use SLACK_WEBHOOK_URL env variable)
+  --report-url URL             Include a URL to a detailed report in the Slack notification
 ```
 
-### Custom Rules System
+## Output Formats
 
-The custom rules system allows fine-grained control over how specific images are analyzed.
+The tool supports multiple output formats:
 
-Create a JSON file with your rules:
+### Text Format (Default)
+Displays the analysis results in a human-readable format in the terminal. This includes:
+- Summary of analyzed images
+- List of outdated images with current and recommended versions
+- Warning messages for any images that couldn't be analyzed
 
+Example:
+```
+Found 3 images in Dockerfile:
+1. python:3.9
+2. nginx:1.19
+3. node:16
+
+Docker Image Analysis Results
+----------------------------
+Images analyzed: 3
+Up-to-date: 1
+Outdated: 2
+Warnings: 0
+
+Outdated Images:
+- nginx:1.19 - Current: 1.19, Recommended: 1.23
+- python:3.9 - Current: 3.9, Recommended: 3.11
+```
+
+### JSON Format
+Outputs the analysis results in JSON format, which is useful for integration with other tools or for further processing.
+
+Example:
+```json
+{
+  "summary": {
+    "total": 3,
+    "up_to_date": 1,
+    "outdated": 2,
+    "warnings": 0
+  },
+  "results": [
+    {
+      "image": "nginx:1.19",
+      "status": "OUTDATED",
+      "current": "1.19",
+      "recommended": "1.23"
+    },
+    {
+      "image": "python:3.9",
+      "status": "OUTDATED",
+      "current": "3.9",
+      "recommended": "3.11"
+    },
+    {
+      "image": "node:16",
+      "status": "UP-TO-DATE"
+    }
+  ],
+  "timestamp": "2023-09-24T15:30:45"
+}
+```
+
+### Other Formats
+The tool also supports HTML, CSV, and Markdown formats for generating reports in different contexts.
+
+## Custom Rules
+
+You can define custom rules for specific images using a JSON file:
+
+Example rules.json format:
 ```json
 {
   "node": {
@@ -214,249 +126,119 @@ Create a JSON file with your rules:
   },
   "debian": {
     "level": 1
-  },
-  "python": {
-    "level": 2
-  },
-  "nginx": {
-    "level": 2,
-    "skip_versions": ["1.19", "1.21"]
   }
 }
 ```
 
-#### Available Rule Properties
+## Ignoring Images
 
-| Property | Type | Description | Example |
-|----------|------|-------------|---------|
-| `level` | Integer | Version level to check (1=major, 2=minor, 3=patch) | `"level": 2` |
-| `lts_versions` | Array | List of version numbers considered LTS | `"lts_versions": [16, 18, 20]` |
-| `step_by` | Integer | For images that follow a step pattern | `"step_by": 2` |
-| `skip_versions` | Array | List of version numbers to ignore | `"skip_versions": ["19", "21"]` |
+You can specify images to ignore using patterns:
 
-#### Rule Application Logic
-
-- **LTS Policy**: When using an LTS version, the tool suggests upgrading to the next LTS version, not the latest non-LTS version
-- **Step-by-N**: Calculates version gaps in terms of "steps" rather than raw version numbers
-- **Skip Versions**: Ignores specified versions when calculating the upgrade path
-
-### Multi-stage Dockerfile Support
-
-The analyzer fully supports multi-stage Dockerfiles. It identifies all base images and treats them independently:
-
-```dockerfile
-FROM golang:1.19 AS builder
-# ...build steps
-
-FROM alpine:3.17
-# ...final image steps
+Example ignore file format:
+```
+# Lines starting with # are comments
+# Each line is a pattern to ignore
+# Wildcard (*) is supported
+python:3.9*
+nginx:1.1*
+# Use regex: prefix for regex patterns
+regex:^debian:(?!11).*
 ```
 
-The analyzer will check both `golang:1.19` and `alpine:3.17` for updates.
+## Slack Integration
 
-## Example Outputs
+The tool can send notifications to Slack when outdated images are found. This is especially useful for CI/CD pipelines or scheduled checks.
 
-### Up-to-date Images
+### Setting up Slack Webhook
 
-```
-Found 2 image(s) in Dockerfile:
-1. python:3.12-alpine
-2. nginx:1.25.3
+1. Go to your Slack workspace and create a new app at https://api.slack.com/apps
+2. Enable "Incoming Webhooks" feature
+3. Add a new webhook to your workspace
+4. Select the channel where you want to receive notifications
+5. Copy the webhook URL
 
-==================================================
-Image 1 of 2: python:3.12-alpine
-==================================================
-...
-Newest semantic version: 3.12
-Actual version: 3.12
-You are using the latest major version
+### Using Slack Notifications
 
-==================================================
-Image 2 of 2: nginx:1.25.3
-==================================================
-...
-Newest semantic version: 1.25.3
-Actual version: 1.25.3
-You are using the latest minor version
+You can provide the webhook URL in two ways:
 
-==================================================
-DOCKERFILE ANALYSIS SUMMARY
-==================================================
-
-✅ ALL IMAGES UP-TO-DATE
+1. Through command-line option:
+```bash
+python3 main.py Dockerfile --slack-notify --slack-webhook "https://hooks.slack.com/services/XXX/YYY/ZZZ"
 ```
 
-### Outdated Images
-
-```
-Found 2 image(s) in Dockerfile:
-1. python:3.9-alpine
-2. node:16
-
-...
-
-==================================================
-DOCKERFILE ANALYSIS SUMMARY
-==================================================
-
-⛔ 2 OUTDATED IMAGE(S):
-  - python:3.9-alpine : Image is 3 minor version(s) behind
-  - node:16 : Image is 4 major version(s) behind
-
-⛔ RESULT: OUTDATED - At least one image is outdated beyond threshold
+2. Through environment variable:
+```bash
+export SLACK_WEBHOOK_URL="https://hooks.slack.com/services/XXX/YYY/ZZZ"
+python3 main.py Dockerfile --slack-notify
 ```
 
-### With Custom Rules Applied
+### Slack Notification Format
 
-```
-Found 1 image(s) in Dockerfile:
-1. node:18
+The Slack notification includes:
+- Summary of analysis results
+- Status indicator with emoji (✅ for all up-to-date, ⚠️ for warnings, ❌ for outdated)
+- List of all analyzed images with their status
+- Detailed information about outdated images
+- System information (hostname, timestamp)
+- Link to detailed report (if report URL is provided)
 
-==================================================
-Image 1 of 1: node:18
-==================================================
-Using major version level (1) for comparison
-Applying LTS version rule for node: 16, 18, 20, 22, 24
-Applying step-by-2 rule for node
-...
-Newest semantic version: 22
-Actual version: 18
-Following step-by-2 rule: 18 → 22 (valid)
-You are 2 major version(s) behind
-Missing versions: 20, 22
+## CI/CD Integration
 
-STATUS: OUTDATED - Image is 2 major version(s) behind
-
-==================================================
-DOCKERFILE ANALYSIS SUMMARY
-==================================================
-
-⛔ 1 OUTDATED IMAGE(S):
-  - node:18 : Image is 2 major version(s) behind
-
-⛔ RESULT: OUTDATED - At least one image is outdated beyond threshold
-```
-
-## Integration with CI/CD
+The tool automatically detects CI/CD environments and adds relevant information to Slack notifications:
 
 ### GitHub Actions Example
 
 ```yaml
-name: Check Docker Images
+name: Docker Image Analysis
 
 on:
   push:
     paths:
-      - 'Dockerfile'
-  schedule:
-    - cron: '0 0 * * 1'  # Weekly on Mondays
+      - '**/Dockerfile'
 
 jobs:
-  check-images:
+  analyze:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      
+      - uses: actions/checkout@v2
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v2
         with:
-          python-version: '3.10'
-          
+          python-version: '3.9'
       - name: Install dependencies
-        run: pip install packaging
-          
-      - name: Check Docker images
         run: |
-          python main.py Dockerfile --tags --threshold 3 --rules rules.json
-          
-      - name: Notify if outdated
-        if: ${{ failure() }}
-        uses: actions/github-script@v6
-        with:
-          script: |
-            github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: 'Outdated Docker images detected',
-              body: 'The Dockerfile contains outdated images. Please update them.'
-            })
+          python -m pip install --upgrade pip
+          pip install image-version-analyzer
+      - name: Analyze Dockerfile
+        run: |
+          python3 main.py Dockerfile --slack-notify --output json --report-file analysis-report.json
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 ```
 
 ### GitLab CI Example
 
 ```yaml
-check_images:
-  stage: test
+docker-analysis:
+  image: python:3.9-alpine
   script:
-    - pip install packaging
-    - python main.py Dockerfile --tags --threshold 3 --rules rules.json
-  rules:
-    - changes:
-        - Dockerfile
-    - schedule: '0 0 * * 1'  # Weekly on Mondays
+    - pip install image-version-analyzer
+    - python3 main.py Dockerfile --slack-notify
+  only:
+    changes:
+      - "**/Dockerfile"
+      - ".gitlab-ci.yml"
   artifacts:
     paths:
-      - image_analysis_report.txt
+      - analysis-report.json
+  variables:
+    SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
 ```
 
-## Known Limitations
+## Exit Codes
 
-- **Docker Hub Only**: Currently only supports checking tags from Docker Hub
-- **API Rate Limits**: May encounter rate limiting with heavy usage
-- **Tag Filtering**: Some complex tagging schemes might not be correctly identified
-- **Limited Registry Support**: Cannot check private registries directly
+The tool uses the following exit codes:
+- 0: All images are up-to-date or only warnings (no outdated images)
+- 1: One or more outdated images found
 
-## Troubleshooting
-
-### Common Issues
-
-1. **"Error: HTTP Error 404: Not Found"**
-   - The image may not exist in Docker Hub
-   - If using a private registry, ensure the correct format is specified
-
-2. **"Error: HTTP Error 429: Too Many Requests"**
-   - You've hit Docker Hub's API rate limits
-   - Add delay between checks or reduce frequency
-
-3. **Incorrect Version Analysis**
-   - Check if the image needs custom rules
-   - Specify the version level manually with `--level`
-
-### Debug Mode
-
-For more detailed output, set the environment variable `DEBUG=1`:
-
-```bash
-DEBUG=1 python3 main.py Dockerfile --tags
-```
-
-## FAQ
-
-**Q: When should I use the GUI vs CLI version?**  
-A: Use the CLI for automation, CI/CD pipelines, or server environments. Use the GUI for interactive analysis, visual exploration of results, or if you prefer graphical interfaces.
-
-**Q: Why does the tool mark an image as outdated when I'm using an LTS version?**  
-A: By default, the tool compares to the latest available version. Use a custom rule with `lts_versions` to enable LTS-aware version comparison.
-
-**Q: Can I check images from private registries directly?**  
-A: Currently, the tool can only check versions against Docker Hub. For private registry images, it strips the registry prefix and checks the public equivalent.
-
-**Q: How does the automatic version level detection work?**  
-A: The tool analyzes the versioning patterns in available tags, detects which parts of the version number change most frequently, and combines this with knowledge about common images.
-
-**Q: Can I use this in production CI/CD pipelines?**  
-A: Yes! The tool is designed for CI/CD integration with configurable thresholds to prevent false positives.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+This makes it easy to integrate with CI/CD pipelines and fail builds when outdated images are detected.

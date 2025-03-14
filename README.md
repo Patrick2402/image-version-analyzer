@@ -13,7 +13,8 @@ A powerful, intelligent tool for analyzing Docker images in your Dockerfile and 
 - [How It Works](#how-it-works)
 - [Installation](#installation)
 - [Usage](#usage)
-  - [Basic Usage](#basic-usage)
+  - [Option 1: Command Line Interface](#option-1-command-line-interface)
+  - [Option 2: Graphical User Interface](#option-2-graphical-user-interface)
   - [Command Line Options](#command-line-options)
   - [Exit Codes](#exit-codes)
 - [Advanced Features](#advanced-features)
@@ -44,6 +45,7 @@ The tool provides actionable feedback that can be used in CI/CD pipelines to enf
 - **Private Registry Support**: Works with images from private registries
 - **Detailed Reporting**: Provides comprehensive output on image status with specific upgrade recommendations
 - **CI/CD Integration**: Exit codes designed for pipeline integration with customizable thresholds
+- **Multiple Interfaces**: Use either the command line interface or graphical user interface
 
 ## How It Works
 
@@ -68,12 +70,17 @@ The analyzer performs the following steps:
 - Python 3.6 or higher
 - Required Python packages:
   - `packaging` (for semantic version comparison)
+  - `PyQt5` (for GUI version only)
 
 ### Installation Steps
 
 1. Install the required Python package:
    ```bash
+   # For CLI version only
    pip install packaging
+   
+   # For GUI version
+   pip install -r requirements.txt
    ```
 
 2. Download the script:
@@ -88,7 +95,11 @@ The analyzer performs the following steps:
 
 ## Usage
 
-### Basic Usage
+You have two options for using Dockerfile Analyzer:
+
+### Option 1: Command Line Interface
+
+The command line interface is perfect for CI/CD pipelines, automation scripts, or users who prefer terminal-based tools.
 
 To analyze a Dockerfile and check for outdated images:
 
@@ -102,6 +113,26 @@ This will:
 3. Identify the latest version for each image
 4. Show how far behind your current version is
 5. Exit with status code 1 if any image is outdated beyond the default threshold (3 versions)
+
+### Option 2: Graphical User Interface
+
+The GUI version provides a user-friendly interface for those who prefer visual analysis and interaction.
+
+![GUI Preview](gui.svg)
+
+To start the GUI:
+
+```bash
+python gui.py
+```
+
+The GUI features:
+- Dockerfile selection via a file browser
+- Configuration controls for threshold and version level
+- Input fields for private registries
+- Real-time analysis logs
+- Color-coded results table
+- Easy-to-read status indicators
 
 ### Command Line Options
 
@@ -401,6 +432,9 @@ DEBUG=1 python3 main.py Dockerfile --tags
 
 ## FAQ
 
+**Q: When should I use the GUI vs CLI version?**  
+A: Use the CLI for automation, CI/CD pipelines, or server environments. Use the GUI for interactive analysis, visual exploration of results, or if you prefer graphical interfaces.
+
 **Q: Why does the tool mark an image as outdated when I'm using an LTS version?**  
 A: By default, the tool compares to the latest available version. Use a custom rule with `lts_versions` to enable LTS-aware version comparison.
 
@@ -412,79 +446,6 @@ A: The tool analyzes the versioning patterns in available tags, detects which pa
 
 **Q: Can I use this in production CI/CD pipelines?**  
 A: Yes! The tool is designed for CI/CD integration with configurable thresholds to prevent false positives.
-
-# Docker Image Version Analyzer GUI
-
-Graphical User Interface for the Docker image version analysis tool.
-
-## Requirements
-
-- Python 3.6+
-- PyQt5
-- packaging
-
-## Installation
-
-To install the required dependencies, use:
-
-```bash
-pip install -r requirements.txt
-```
-
-## Running the Application
-
-```bash
-python gui.py
-```
-
-## Features
-
-The GUI application offers all features available in the console version, but with a user-friendly interface:
-
-- Selection of Dockerfile for analysis
-- Setting version threshold for determining outdated images
-- Selection of version level for comparison (major, minor, patch)
-- Adding private registries for analysis
-- Loading custom rules from a JSON file
-- Displaying analysis logs
-- Showing results in a readable table with color-coded status indicators
-
-## Interface Description
-
-### Settings Panel
-
-- **Dockerfile** - Path to the Dockerfile for analysis
-- **Version Threshold** - Number of versions after which an image is marked as outdated
-- **Version Level** - Determines which version level is considered when comparing:
-  - Automatic Detection - The program automatically selects the appropriate level
-  - Major Version - Compares only major versions (e.g., 2.x.x vs 3.x.x)
-  - Minor Version - Compares major and minor versions (e.g., 2.1.x vs 2.2.x)
-  - Patch Version - Compares all version levels (e.g., 2.1.1 vs 2.1.2)
-- **Private Registries** - List of private registries separated by commas
-- **Rules File** - Path to JSON file with custom rules for specific images
-
-### Tabs
-
-- **Logs** - Displays detailed logs from the analysis process
-- **Results** - Presents analysis results in a table with the following columns:
-  - Image - Docker image name
-  - Status - Image update status (UP-TO-DATE, OUTDATED, WARNING, UNKNOWN)
-  - Current Version - Currently used image version
-  - Recommended Version - Recommended latest image version
-  - Message - Detailed status information
-
-## Status Colors
-
-- **Green (UP-TO-DATE)** - Image is up to date
-- **Red (OUTDATED)** - Image is outdated and requires updating
-- **Yellow (WARNING)** - Image requires attention (e.g., violates LTS rules)
-- **Gray (UNKNOWN)** - Image status could not be determined
-
-## Troubleshooting
-
-- **No Results** - Make sure the Dockerfile is valid and contains FROM instructions
-- **Connection Errors** - Check if you have a working internet connection to download tag information
-- **Analysis Errors** - Check the logs on the "Logs" tab for detailed error information
 
 ## Contributing
 

@@ -413,6 +413,79 @@ A: The tool analyzes the versioning patterns in available tags, detects which pa
 **Q: Can I use this in production CI/CD pipelines?**  
 A: Yes! The tool is designed for CI/CD integration with configurable thresholds to prevent false positives.
 
+# Docker Image Version Analyzer GUI
+
+Graphical User Interface for the Docker image version analysis tool.
+
+## Requirements
+
+- Python 3.6+
+- PyQt5
+- packaging
+
+## Installation
+
+To install the required dependencies, use:
+
+```bash
+pip install -r requirements.txt
+```
+
+## Running the Application
+
+```bash
+python gui.py
+```
+
+## Features
+
+The GUI application offers all features available in the console version, but with a user-friendly interface:
+
+- Selection of Dockerfile for analysis
+- Setting version threshold for determining outdated images
+- Selection of version level for comparison (major, minor, patch)
+- Adding private registries for analysis
+- Loading custom rules from a JSON file
+- Displaying analysis logs
+- Showing results in a readable table with color-coded status indicators
+
+## Interface Description
+
+### Settings Panel
+
+- **Dockerfile** - Path to the Dockerfile for analysis
+- **Version Threshold** - Number of versions after which an image is marked as outdated
+- **Version Level** - Determines which version level is considered when comparing:
+  - Automatic Detection - The program automatically selects the appropriate level
+  - Major Version - Compares only major versions (e.g., 2.x.x vs 3.x.x)
+  - Minor Version - Compares major and minor versions (e.g., 2.1.x vs 2.2.x)
+  - Patch Version - Compares all version levels (e.g., 2.1.1 vs 2.1.2)
+- **Private Registries** - List of private registries separated by commas
+- **Rules File** - Path to JSON file with custom rules for specific images
+
+### Tabs
+
+- **Logs** - Displays detailed logs from the analysis process
+- **Results** - Presents analysis results in a table with the following columns:
+  - Image - Docker image name
+  - Status - Image update status (UP-TO-DATE, OUTDATED, WARNING, UNKNOWN)
+  - Current Version - Currently used image version
+  - Recommended Version - Recommended latest image version
+  - Message - Detailed status information
+
+## Status Colors
+
+- **Green (UP-TO-DATE)** - Image is up to date
+- **Red (OUTDATED)** - Image is outdated and requires updating
+- **Yellow (WARNING)** - Image requires attention (e.g., violates LTS rules)
+- **Gray (UNKNOWN)** - Image status could not be determined
+
+## Troubleshooting
+
+- **No Results** - Make sure the Dockerfile is valid and contains FROM instructions
+- **Connection Errors** - Check if you have a working internet connection to download tag information
+- **Analysis Errors** - Check the logs on the "Logs" tab for detailed error information
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.

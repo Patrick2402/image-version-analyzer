@@ -6,13 +6,14 @@ import json
 import urllib.request
 from packaging import version
 from collections import defaultdict
-from formatters import get_formatter
-from image_ignore import parse_ignore_options
 
-# Import the original functions
+# Import funkcji analizujących
 from dockerfile_parser import extract_base_images
 from image_analyzer import analyze_image_tags
 from utils import parse_private_registries, load_custom_rules
+from image_ignore import parse_ignore_options
+from formatters import get_formatter
+from slack_notifier import send_slack_notification
 
 def main():
     if len(sys.argv) < 2 or '--help' in sys.argv or '-h' in sys.argv:
@@ -25,16 +26,22 @@ def main():
         print("  --private-registries-file FILE: File containing list of private registries")
         print("  --rules FILE: JSON file with custom rules for specific images")
         
-        # Add output format options
+        # Output format options
         print("\nOutput Options:")
         print("  --output FORMAT: Specify output format (text, json, html, csv, markdown)")
         print("  --report-file PATH: Save analysis results to specified file")
         print("  --no-timestamp: Do not include timestamp in the report")
         
-        # Add ignore options
+        # Image ignore options
         print("\nImage Ignore Options:")
         print("  --ignore PATTERN: Ignore specific image pattern (wildcards supported, can be specified multiple times)")
         print("  --ignore-images FILE: Path to file containing list of images to ignore")
+        
+        # Slack notification options
+        print("\nSlack Notification Options:")
+        print("  --slack-notify: Send notification to Slack about analysis results")
+        print("  --slack-webhook URL: Webhook URL for Slack notifications (can also use SLACK_WEBHOOK_URL env variable)")
+        print("  --report-url URL: Include a URL to a detailed report in the Slack notification")
         
         print("\nExample rules.json format:")
         print('''
@@ -138,6 +145,30 @@ regex:^debian:(?!11).*
     if '--no-timestamp' in sys.argv:
         include_timestamp = False
     
+    # Parse Slack notification options
+    slack_webhook = None
+    send_slack = False
+    report_url = None
+    
+    if '--slack-notify' in sys.argv:
+        send_slack = True
+    
+    if '--slack-webhook' in sys.argv:
+        try:
+            idx = sys.argv.index('--slack-webhook')
+            if idx + 1 < len(sys.argv) and not sys.argv[idx + 1].startswith('--'):
+                slack_webhook = sys.argv[idx + 1]
+        except (ValueError, IndexError):
+            pass
+    
+    if '--report-url' in sys.argv:
+        try:
+            idx = sys.argv.index('--report-url')
+            if idx + 1 < len(sys.argv) and not sys.argv[idx + 1].startswith('--'):
+                report_url = sys.argv[idx + 1]
+        except (ValueError, IndexError):
+            pass
+    
     image_info_list = extract_base_images(dockerfile_path)
     
     if not image_info_list:
@@ -237,13 +268,38 @@ regex:^debian:(?!11).*
     if output_format == 'text' or not report_file:
         print(formatted_output)
     
+    # Send Slack notification if requested
+    if send_slack:
+        additional_info = {}
+        if report_url:
+            additional_info['report_url'] = report_url
+        
+        # Add CI/CD info if available
+        if os.environ.get('CI_PIPELINE_URL'):
+            additional_info['CI Pipeline'] = os.environ['CI_PIPELINE_URL']
+        elif os.environ.get('GITHUB_WORKFLOW'):
+            additional_info['GitHub Workflow'] = f"{os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{os.environ.get('GITHUB_REPOSITORY')}/actions/runs/{os.environ.get('GITHUB_RUN_ID')}"
+        
+        # Send notification
+        success = send_slack_notification(
+            all_results,
+            dockerfile_path,
+            webhook_url=slack_webhook,
+            additional_info=additional_info
+        )
+        
+        if success:
+            print("✅ Slack notification sent successfully")
+        else:
+            print("❌ Failed to send Slack notification")
+    
     # Set exit code
     if not outdated_images and not warning_images and not unknown_images:
-        sys.exit(0)
+        sys.exit(0)  # All up-to-date
     elif outdated_images:
-        sys.exit(1)
+        sys.exit(1)  # Outdated images found
     else:
-        sys.exit(0)
+        sys.exit(0)  # Warnings only, but still considered successful
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,51 @@
+<svg viewBox="0 0 800 500" xmlns="http://www.w3.org/2000/svg">
+  <!-- Slack message background -->
+  <rect x="50" y="50" width="700" height="400" rx="15" ry="15" fill="#ffffff" stroke="#dddddd" stroke-width="2"/>
+  
+  <!-- Header with app icon -->
+  <circle cx="85" cy="85" r="20" fill="#E01E5A"/>
+  <text x="120" y="92" font-family="Arial" font-size="18" font-weight="bold">Docker Image Analyzer</text>
+  
+  <!-- Message header -->
+  <text x="85" y="130" font-family="Arial" font-size="20" font-weight="bold">Docker Image Analysis Report</text>
+  <text x="85" y="155" font-family="Arial" font-size="16">Docker Image Analysis for `Dockerfile`</text>
+  
+  <!-- Divider -->
+  <line x1="85" y1="175" x2="715" y2="175" stroke="#eeeeee" stroke-width="2"/>
+  
+  <!-- Summary section - first row -->
+  <text x="85" y="205" font-family="Arial" font-size="14" font-weight="bold">Images Analyzed:</text>
+  <text x="85" y="225" font-family="Arial" font-size="14">3</text>
+  
+  <text x="250" y="205" font-family="Arial" font-size="14" font-weight="bold">Status:</text>
+  <text x="250" y="225" font-family="Arial" font-size="14">❌ Outdated</text>
+  
+  <!-- Summary section - second row -->
+  <text x="85" y="255" font-family="Arial" font-size="14" font-weight="bold">Up-to-date:</text>
+  <text x="85" y="275" font-family="Arial" font-size="14">1</text>
+  
+  <text x="250" y="255" font-family="Arial" font-size="14" font-weight="bold">Outdated:</text>
+  <text x="250" y="275" font-family="Arial" font-size="14">2</text>
+  
+  <text x="400" y="255" font-family="Arial" font-size="14" font-weight="bold">Warnings:</text>
+  <text x="400" y="275" font-family="Arial" font-size="14">0</text>
+  
+  <text x="550" y="255" font-family="Arial" font-size="14" font-weight="bold">Unknown:</text>
+  <text x="550" y="275" font-family="Arial" font-size="14">0</text>
+  
+  <!-- Outdated images section -->
+  <text x="85" y="305" font-family="Arial" font-size="14" font-weight="bold">Outdated Images:</text>
+  <text x="85" y="325" font-family="monospace" font-size="13">• `python:3.9-alpine` - 3.9 → 3.12</text>
+  <text x="85" y="345" font-family="monospace" font-size="13">• `node:14` - 14 → 20</text>
+  
+  <!-- Security section -->
+  <text x="85" y="375" font-family="Arial" font-size="14" font-weight="bold">Security Issues:</text>
+  <text x="85" y="395" font-family="Arial" font-size="14">1 image has security vulnerabilities</text>
+  
+  <!-- Context footer -->
+  <rect x="85" y="415" width="630" height="25" rx="5" ry="5" fill="#f5f5f5"/>
+  <text x="95" y="432" font-family="Arial" font-size="12" fill="#666666">Host: server-prod-01 • Time: 2023-09-01 14:30:25 • Branch: main</text>
+  
+  <!-- Color bar indicator (red for outdated) -->
+  <rect x="50" y="50" width="8" height="400" rx="4" ry="4" fill="#ff0000"/>
+</svg>

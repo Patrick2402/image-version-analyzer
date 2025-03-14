@@ -1,12 +1,21 @@
 #!/usr/bin/env python3
+import re
 import sys
 import os.path
+import json
+import urllib.request
+from packaging import version
+from collections import defaultdict
+from formatters import get_formatter
+from image_ignore import parse_ignore_options
+
+# Import the original functions
 from dockerfile_parser import extract_base_images
 from image_analyzer import analyze_image_tags
 from utils import parse_private_registries, load_custom_rules
 
 def main():
-    if len(sys.argv) < 2:
+    if len(sys.argv) < 2 or '--help' in sys.argv or '-h' in sys.argv:
         print("Usage: python3 main.py <path_to_Dockerfile> [options]")
         print("Options:")
         print("  --tags: Show available tags for images")
@@ -15,6 +24,18 @@ def main():
         print("  --private-registry [REGISTRY]: Mark images from specified private registry")
         print("  --private-registries-file FILE: File containing list of private registries")
         print("  --rules FILE: JSON file with custom rules for specific images")
+        
+        # Add output format options
+        print("\nOutput Options:")
+        print("  --output FORMAT: Specify output format (text, json, html, csv, markdown)")
+        print("  --report-file PATH: Save analysis results to specified file")
+        print("  --no-timestamp: Do not include timestamp in the report")
+        
+        # Add ignore options
+        print("\nImage Ignore Options:")
+        print("  --ignore PATTERN: Ignore specific image pattern (wildcards supported, can be specified multiple times)")
+        print("  --ignore-images FILE: Path to file containing list of images to ignore")
+        
         print("\nExample rules.json format:")
         print('''
 {
@@ -28,6 +49,16 @@ def main():
     "level": 1
   }
 }
+''')
+        print("\nExample ignore file format:")
+        print('''
+# Lines starting with # are comments
+# Each line is a pattern to ignore
+# Wildcard (*) is supported
+python:3.9*
+nginx:1.1*
+# Use regex: prefix for regex patterns
+regex:^debian:(?!11).*
 ''')
         return
     
@@ -51,6 +82,9 @@ def main():
                 custom_rules = load_custom_rules(rules_file)
         except ValueError:
             pass
+    
+    # Parse ignore options
+    ignore_manager = parse_ignore_options(sys.argv)
     
     # Parse threshold argument
     threshold = 3  # Default threshold
@@ -77,22 +111,82 @@ def main():
             except ValueError:
                 print(f"Warning: Invalid level value. Using automatic detection.")
     
+    # Parse output format options
+    output_format = 'text'  # Default
+    report_file = None
+    include_timestamp = True
+    
+    if '--output' in sys.argv:
+        try:
+            idx = sys.argv.index('--output')
+            if idx + 1 < len(sys.argv) and not sys.argv[idx + 1].startswith('--'):
+                output_format = sys.argv[idx + 1].lower()
+                if output_format not in ['text', 'json', 'html', 'csv', 'markdown']:
+                    print(f"Warning: Invalid output format '{output_format}'. Using 'text'.")
+                    output_format = 'text'
+        except (ValueError, IndexError):
+            pass
+    
+    if '--report-file' in sys.argv:
+        try:
+            idx = sys.argv.index('--report-file')
+            if idx + 1 < len(sys.argv) and not sys.argv[idx + 1].startswith('--'):
+                report_file = sys.argv[idx + 1]
+        except (ValueError, IndexError):
+            pass
+    
+    if '--no-timestamp' in sys.argv:
+        include_timestamp = False
+    
     image_info_list = extract_base_images(dockerfile_path)
     
     if not image_info_list:
         print("No valid images found in Dockerfile.")
         sys.exit(1)
     
-    print(f"Found {len(image_info_list)} image{'s' if len(image_info_list) > 1 else ''} in Dockerfile:")
-    for i, info in enumerate(image_info_list, 1):
-        stage_info = f" (stage: {info['stage']})" if info['stage'] else ""
-        print(f"{i}. {info['image']}{stage_info}")
+    # Filter out ignored images
+    original_count = len(image_info_list)
+    filtered_image_info_list = []
+    ignored_images = []
+    
+    for info in image_info_list:
+        if ignore_manager.should_ignore(info['image']):
+            ignored_images.append(info['image'])
+        else:
+            filtered_image_info_list.append(info)
+    
+    # Print information about ignored images
+    if ignored_images:
+        print(f"Ignoring {len(ignored_images)} image(s):")
+        for img in ignored_images:
+            print(f"  - {img}")
+    
+    if not filtered_image_info_list:
+        print("All images are ignored. Nothing to analyze.")
+        sys.exit(0)
+    
+    # Update image_info_list to filtered version
+    image_info_list = filtered_image_info_list
+    total_images = len(image_info_list)
+    
+    # List images found in dockerfile but don't print yet if using non-text output
+    if output_format == 'text':
+        print(f"Found {total_images} image{'s' if total_images > 1 else ''} in Dockerfile:")
+        for i, info in enumerate(image_info_list, 1):
+            stage_info = f" (stage: {info['stage']})" if info['stage'] else ""
+            print(f"{i}. {info['image']}{stage_info}")
     
     outdated_images = []
     warning_images = []
     unknown_images = []
+    all_results = []
     
     if show_tags:
+        # Redirect output to a buffer if not using text format
+        original_stdout = sys.stdout
+        if output_format != 'text':
+            sys.stdout = open(os.devnull, 'w')  # Redirect to /dev/null
+        
         for i, info in enumerate(image_info_list, 1):
             status = analyze_image_tags(
                 info['image'], 
@@ -104,41 +198,51 @@ def main():
                 custom_rules
             )
             
+            all_results.append(status)
+            
             if status['status'] == 'OUTDATED':
                 outdated_images.append(status)
             elif status['status'] == 'WARNING':
                 warning_images.append(status)
             elif status['status'] == 'UNKNOWN':
                 unknown_images.append(status)
+        
+        # Restore stdout if it was redirected
+        if output_format != 'text':
+            sys.stdout.close()
+            sys.stdout = original_stdout
     
-    # Print summary
-    print("\n" + "="*50)
-    print("DOCKERFILE ANALYSIS SUMMARY")
-    print("="*50)
+    # Add ignored images info to the summary if any were ignored
+    if ignored_images:
+        all_results.append({
+            'image': 'IGNORED_IMAGES_SUMMARY',
+            'status': 'INFO',
+            'message': f"{len(ignored_images)} image(s) were ignored",
+            'ignored_images': ignored_images
+        })
     
-    if outdated_images:
-        print(f"\n⛔ {len(outdated_images)} OUTDATED IMAGE(S):")
-        for img in outdated_images:
-            print(f"  - {img['image']} : {img['message']}")
+    # Create formatter and generate output
+    formatter = get_formatter(output_format, include_timestamp=include_timestamp)
+    formatted_output = formatter.format(all_results, total_images, original_count)
     
-    if warning_images:
-        print(f"\n⚠️ {len(warning_images)} WARNING(S):")
-        for img in warning_images:
-            print(f"  - {img['image']} : {img['message']}")
+    # Save to file if specified
+    if report_file:
+        success = formatter.save_to_file(formatted_output, report_file)
+        if success:
+            print(f"Report saved to: {report_file}")
+        else:
+            print(f"Failed to save report to: {report_file}")
     
-    if unknown_images:
-        print(f"\n❓ {len(unknown_images)} UNKNOWN STATUS:")
-        for img in unknown_images:
-            print(f"  - {img['image']} : {img['message']}")
+    # Print output if it's text format or no file was specified
+    if output_format == 'text' or not report_file:
+        print(formatted_output)
     
+    # Set exit code
     if not outdated_images and not warning_images and not unknown_images:
-        print("\n✅ ALL IMAGES UP-TO-DATE")
         sys.exit(0)
     elif outdated_images:
-        print("\n⛔ RESULT: OUTDATED - At least one image is outdated beyond threshold")
         sys.exit(1)
     else:
-        print("\n⚠️ RESULT: WARNING - Some images have warnings or unknown status")
         sys.exit(0)
 
 if __name__ == "__main__":

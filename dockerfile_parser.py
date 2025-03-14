@@ -22,7 +22,7 @@ def extract_base_images(dockerfile_path):
                         'image': image_name,
                         'stage': stage_name
                     })
-            
+
             if not images:
                 print("FROM instruction not found in Dockerfile")
                 return []

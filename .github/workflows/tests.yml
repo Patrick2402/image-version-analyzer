@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.13"]
 
     steps:
     - uses: actions/checkout@v3
@@ -26,7 +26,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install packaging
         # Only install PyQt5 for GUI tests in one Python version to save time
-        if [ "${{ matrix.python-version }}" == "3.9" ]; then
+        if [ "${{ matrix.python-version }}" == "3.13" ]; then
           pip install PyQt5
         fi
     
@@ -36,22 +36,21 @@ jobs:
     
     - name: Run tests
       run: |
-        if [ "${{ matrix.python-version }}" == "3.9" ]; then
+        if [ "${{ matrix.python-version }}" == "3.13" ]; then
           # Run all tests including GUI tests
           coverage run run_tests.py
         else
-          # Skip GUI tests for other Python versions
           python -m unittest discover -p "test_*.py" -k "not TestDockerVersionAnalyzerGUI and not TestOutputRedirector and not TestAnalysisThread"
         fi
     
     - name: Generate coverage report
-      if: matrix.python-version == '3.9'
+      if: matrix.python-version == '3.13'
       run: |
         coverage report -m
         coverage xml
     
     - name: Upload coverage to Codecov
-      if: matrix.python-version == '3.9'
+      if: matrix.python-version == '3.13'
       uses: codecov/codecov-action@v3
       with:
         file: ./coverage.xml

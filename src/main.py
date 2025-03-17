@@ -13,17 +13,27 @@ from utils.utils import parse_private_registries, load_custom_rules
 from src.image_ignore import parse_ignore_options
 from utils.formatters import get_formatter
 from utils.slack_notifier import send_slack_notification
+from src.github_scanner import github_scan
+
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "github-scan":
+        GITHUB_SCANNER_AVAILABLE = True
+        github_scan(sys.argv[2:])
+    else: 
+        GITHUB_SCANNER_AVAILABLE = False
+
     if len(sys.argv) < 2 or '--help' in sys.argv or '-h' in sys.argv:
         print("Usage: python3 main.py <path_to_Dockerfile> [options]")
-        print("Options:")
+        print("   or: python3 main.py github-scan [github-options]")
+        print("\nTypowe opcje analizy Dockerfile:")
         print("  --tags: Show available tags for images")
         print("  --threshold N: Set the version gap threshold for marking images as outdated (default: 3)")
         print("  --level N: Force specific version level for comparison (1=major, 2=minor, 3=patch)")
         print("  --private-registry [REGISTRY]: Mark images from specified private registry")
         print("  --private-registries-file FILE: File containing list of private registries")
         print("  --rules FILE: JSON file with custom rules for specific images")
+        print("  --no-info: Do not show detailed information about images")
         
         # Output format options
         print("\nOutput Options:")
@@ -41,6 +51,18 @@ def main():
         print("  --slack-notify: Send notification to Slack about analysis results")
         print("  --slack-webhook URL: Webhook URL for Slack notifications (can also use SLACK_WEBHOOK_URL env variable)")
         print("  --report-url URL: Include a URL to a detailed report in the Slack notification")
+        
+        # GitHub scanning options (jeśli dostępne)
+        if GITHUB_SCANNER_AVAILABLE:
+            print("\nGitHub Scanning Mode:")
+            print("  python3 main.py github-scan [options]")
+            print("\nGitHub Scanning Options:")
+            print("  --github-token TOKEN: GitHub API token (required)")
+            print("  --github-org ORG: GitHub organization name")
+            print("  --github-user USER: GitHub username (if not using --github-org)")
+            print("  --output-dir DIR: Directory to save reports (default: docker_analysis)")
+            print("  --max-workers N: Maximum number of concurrent workers (default: 5)")
+            print("\nGitHub Scanner can use all standard options like --threshold, --output, etc.")
         
         print("\nExample rules.json format:")
         print('''
@@ -146,6 +168,11 @@ regex:^debian:(?!11).*
     if '--no-timestamp' in sys.argv:
         include_timestamp = False
     
+    if '--no-info' in sys.argv:
+        no_info = True
+    else:
+        no_info = False
+
     # Parse Slack notification options
     slack_webhook = None
     send_slack = False
@@ -170,7 +197,7 @@ regex:^debian:(?!11).*
         except (ValueError, IndexError):
             pass
     
-    image_info_list = extract_base_images(dockerfile_path)
+    image_info_list = extract_base_images(dockerfile_path, no_info=False)
     
     if not image_info_list:
         print("No valid images found in Dockerfile.")
@@ -227,7 +254,8 @@ regex:^debian:(?!11).*
                 threshold, 
                 force_level,
                 private_registries,
-                custom_rules
+                custom_rules,
+                no_info
             )
             
             all_results.append(status)

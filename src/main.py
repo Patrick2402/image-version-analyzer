@@ -7,12 +7,12 @@ import urllib.request
 from packaging import version
 from collections import defaultdict
 
-from dockerfile_parser import extract_base_images
-from image_analyzer import analyze_image_tags
-from utils import parse_private_registries, load_custom_rules
-from image_ignore import parse_ignore_options
-from formatters import get_formatter
-from slack_notifier import send_slack_notification
+from docker.dockerfile_parser import extract_base_images
+from src.image_analyzer import analyze_image_tags
+from utils.utils import parse_private_registries, load_custom_rules
+from src.image_ignore import parse_ignore_options
+from utils.formatters import get_formatter
+from utils.slack_notifier import send_slack_notification
 
 def main():
     if len(sys.argv) < 2 or '--help' in sys.argv or '-h' in sys.argv:

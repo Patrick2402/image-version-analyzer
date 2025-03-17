@@ -1,6 +1,6 @@
 import re
-from registry_utils import get_image_tags, is_supported_registry, get_public_image_name, is_valid_version_tag
-from version_utils import detect_version_level, calculate_version_gap, check_lts_version
+from utils.registry_utils import get_image_tags, is_supported_registry, get_public_image_name, is_valid_version_tag
+from utils.version_utils import detect_version_level, calculate_version_gap, check_lts_version
 
 def analyze_image_tags(image_name, image_count, total_images, threshold, force_level=None, private_registries=None, custom_rules=None):
     """Analyze tags for a specific image and display information."""

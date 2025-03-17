@@ -10,7 +10,7 @@ pip install image-version-analyzer
 
 ## Usage
 ```bash
-python3 main.py <path_to_Dockerfile> [options]
+python3 run.py <path_to_Dockerfile> [options]
 ```
 
 ## Options
@@ -163,13 +163,13 @@ You can provide the webhook URL in two ways:
 
 1. Through command-line option:
 ```bash
-python3 main.py Dockerfile --slack-notify --slack-webhook "https://hooks.slack.com/services/XXX/YYY/ZZZ"
+python3 run.py Dockerfile --slack-notify --slack-webhook "https://hooks.slack.com/services/XXX/YYY/ZZZ"
 ```
 
 2. Through environment variable:
 ```bash
 export SLACK_WEBHOOK_URL="https://hooks.slack.com/services/XXX/YYY/ZZZ"
-python3 main.py Dockerfile --slack-notify
+python3 run.py Dockerfile --slack-notify
 ```
 
 ### Slack Notification Format
@@ -211,7 +211,7 @@ jobs:
           pip install image-version-analyzer
       - name: Analyze Dockerfile
         run: |
-          python3 main.py Dockerfile --slack-notify --output json --report-file analysis-report.json
+          python3 run.py Dockerfile --slack-notify --output json --report-file analysis-report.json
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 ```
@@ -223,7 +223,7 @@ docker-analysis:
   image: python:3.9-alpine
   script:
     - pip install image-version-analyzer
-    - python3 main.py Dockerfile --slack-notify
+    - python3 run.py Dockerfile --slack-notify
   only:
     changes:
       - "**/Dockerfile"

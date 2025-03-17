@@ -7,7 +7,6 @@ import urllib.request
 from packaging import version
 from collections import defaultdict
 
-# Import funkcji analizujących
 from dockerfile_parser import extract_base_images
 from image_analyzer import analyze_image_tags
 from utils import parse_private_registries, load_custom_rules
@@ -73,6 +72,7 @@ regex:^debian:(?!11).*
     show_tags = "--tags" in sys.argv
     
     # Parse private registries
+    # This is done before parsing other options to allow private registries to be used in custom rules :) Patryk
     private_registries = parse_private_registries(sys.argv)
     if private_registries:
         print("Using private registries:")
@@ -94,7 +94,8 @@ regex:^debian:(?!11).*
     ignore_manager = parse_ignore_options(sys.argv)
     
     # Parse threshold argument
-    threshold = 3  # Default threshold
+    threshold = 3
+    
     for i, arg in enumerate(sys.argv):
         if arg == "--threshold" and i + 1 < len(sys.argv):
             try:

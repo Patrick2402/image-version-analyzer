@@ -1,11 +1,10 @@
 import re
 import os.path
 
-def extract_base_images(dockerfile_path):
+def extract_base_images(dockerfile_path, no_info):
     """Extracts all base images from a Dockerfile, including multiple FROM instructions."""
     try:
         if not os.path.isfile(dockerfile_path):
-            print(f"Error: File {dockerfile_path} not found.")
             return []
             
         with open(dockerfile_path, 'r') as dockerfile:
@@ -26,6 +25,10 @@ def extract_base_images(dockerfile_path):
             if not images:
                 print("FROM instruction not found in Dockerfile")
                 return []
+            
+            if not no_info:
+                for image in images:
+                    print(f"Image: {image['image']}, Stage: {image['stage']}")
             
             return images
     except Exception as e:

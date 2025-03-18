@@ -10,7 +10,7 @@ class BaseFormatter:
     def __init__(self, include_timestamp=True):
         self.include_timestamp = include_timestamp
     
-    def format(self, results, total_images, original_count=None):
+    def format(self, results, total_images, original_count=None, github_info=None):
         """
         Format the results.
         
@@ -18,6 +18,7 @@ class BaseFormatter:
             results: List of image analysis results
             total_images: Total number of images analyzed (after filtering)
             original_count: Original number of images before filtering (optional)
+            github_info: Information about GitHub repository (optional)
             
         Returns:
             String representation of formatted results
@@ -83,13 +84,19 @@ class BaseFormatter:
 class TextFormatter(BaseFormatter):
     """Format results as plain text"""
     
-    def format(self, results, total_images, original_count=None):
+    def format(self, results, total_images, original_count=None, github_info=None):
         output = []
         
         # Add timestamp
         timestamp = self.get_timestamp()
         if timestamp:
             output.append(f"Analysis Time: {timestamp}\n")
+        
+        # Add GitHub info if available
+        if github_info:
+            output.append(f"GitHub Repository: {github_info.get('org_or_user')}/{github_info.get('repo')}")
+            output.append(f"Dockerfile Path: {github_info.get('path')}")
+            output.append(f"GitHub URL: {github_info.get('url')}\n")
         
         # If some images were ignored, show that
         if original_count and original_count > total_images:
@@ -146,7 +153,7 @@ class TextFormatter(BaseFormatter):
 class JsonFormatter(BaseFormatter):
     """Format results as JSON"""
     
-    def format(self, results, total_images, original_count=None):
+    def format(self, results, total_images, original_count=None, github_info=None):
         # Create a copy of results excluding the special entries
         filtered_results = [r for r in results if r.get('image') != 'IGNORED_IMAGES_SUMMARY']
         
@@ -159,6 +166,10 @@ class JsonFormatter(BaseFormatter):
             'results': filtered_results,
             'summary': self.get_summary(results),
         }
+        
+        # Add GitHub info if available
+        if github_info:
+            output['github'] = github_info
         
         # Add original count and ignored images if applicable
         if original_count and original_count > total_images:
@@ -176,9 +187,23 @@ class JsonFormatter(BaseFormatter):
 class CsvFormatter(BaseFormatter):
     """Format results as CSV"""
     
-    def format(self, results, total_images, original_count=None):
+    def format(self, results, total_images, original_count=None, github_info=None):
         output = io.StringIO()
-        fieldnames = ['image', 'status', 'current', 'recommended', 'gap', 'message']
+        
+        # Determine if we need to include a repository column
+        has_repo_info = any('repository' in result for result in results)
+        include_repo = has_repo_info or (github_info and 'repo' in github_info)
+        
+        if include_repo:
+            fieldnames = ['image', 'repository', 'status', 'current', 'recommended', 'gap', 'message']
+        else:
+            fieldnames = ['image', 'status', 'current', 'recommended', 'gap', 'message']
+        
+        # Add GitHub info as comments if available
+        if github_info:
+            output.write(f"# GitHub Repository: {github_info.get('org_or_user')}/{github_info.get('repo')}\n")
+            output.write(f"# Dockerfile Path: {github_info.get('path')}\n")
+            output.write(f"# GitHub URL: {github_info.get('url')}\n\n")
         
         writer = csv.DictWriter(output, fieldnames=fieldnames)
         writer.writeheader()
@@ -188,7 +213,17 @@ class CsvFormatter(BaseFormatter):
         
         for result in filtered_results:
             # Create a new row with only the fields we want
-            row = {field: result.get(field, '') for field in fieldnames}
+            row = {field: result.get(field, '') for field in fieldnames if field != 'repository'}
+            
+            # Add repository if needed
+            if include_repo:
+                if 'repository' in result:
+                    row['repository'] = result['repository']
+                elif github_info and 'repo' in github_info:
+                    row['repository'] = github_info['repo']
+                else:
+                    row['repository'] = 'N/A'
+                
             writer.writerow(row)
         
         # Add ignored images as metadata
@@ -204,7 +239,7 @@ class CsvFormatter(BaseFormatter):
 class MarkdownFormatter(BaseFormatter):
     """Format results as Markdown"""
     
-    def format(self, results, total_images, original_count=None):
+    def format(self, results, total_images, original_count=None, github_info=None):
         output = []
         
         # Add title and timestamp
@@ -213,6 +248,13 @@ class MarkdownFormatter(BaseFormatter):
         timestamp = self.get_timestamp()
         if timestamp:
             output.append(f"*Generated on: {timestamp}*\n")
+        
+        # Add GitHub info if available
+        if github_info:
+            output.append("## Repository Information")
+            output.append(f"- **GitHub Repository:** {github_info.get('org_or_user')}/{github_info.get('repo')}")
+            output.append(f"- **Dockerfile Path:** {github_info.get('path')}")
+            output.append(f"- **GitHub URL:** [{github_info.get('path')}]({github_info.get('url')})\n")
         
         # Find ignored images info if present
         ignored_info = next((r for r in results if r.get('image') == 'IGNORED_IMAGES_SUMMARY'), None)
@@ -246,19 +288,49 @@ class MarkdownFormatter(BaseFormatter):
         
         summary = self.get_summary(results)
         
-        # Results table
+        # Results table - with or without Repository column
         output.append("\n### Detailed Results")
-        output.append("| Image | Status | Current | Recommended | Gap | Message |")
-        output.append("| --- | --- | --- | --- | --- | --- |")
         
-        for result in filtered_results:
-            status_emoji = "✅" if result['status'] == 'UP-TO-DATE' else "⛔" if result['status'] == 'OUTDATED' else "⚠️" if result['status'] == 'WARNING' else "❓"
+        # Check if we have repository info in results or in github_info
+        has_repo_info = any('repository' in result for result in filtered_results)
+        
+        if has_repo_info:
+            output.append("| Image | Repository | Status | Current | Recommended | Gap | Message |")
+            output.append("| --- | --- | --- | --- | --- | --- | --- |")
             
-            current = result.get('current', 'N/A')
-            recommended = result.get('recommended', 'N/A')
-            gap = str(result.get('gap', 'N/A'))
+            for result in filtered_results:
+                status_emoji = "✅" if result['status'] == 'UP-TO-DATE' else "⛔" if result['status'] == 'OUTDATED' else "⚠️" if result['status'] == 'WARNING' else "❓"
+                
+                current = result.get('current', 'N/A')
+                recommended = result.get('recommended', 'N/A')
+                gap = str(result.get('gap', 'N/A'))
+                repository = result.get('repository', 'N/A')
+                
+                output.append(f"| `{result['image']}` | {repository} | {status_emoji} {result['status']} | {current} | {recommended} | {gap} | {result['message']} |")
+        elif github_info and 'repo' in github_info:
+            output.append("| Image | Repository | Status | Current | Recommended | Gap | Message |")
+            output.append("| --- | --- | --- | --- | --- | --- | --- |")
             
-            output.append(f"| `{result['image']}` | {status_emoji} {result['status']} | {current} | {recommended} | {gap} | {result['message']} |")
+            for result in filtered_results:
+                status_emoji = "✅" if result['status'] == 'UP-TO-DATE' else "⛔" if result['status'] == 'OUTDATED' else "⚠️" if result['status'] == 'WARNING' else "❓"
+                
+                current = result.get('current', 'N/A')
+                recommended = result.get('recommended', 'N/A')
+                gap = str(result.get('gap', 'N/A'))
+                
+                output.append(f"| `{result['image']}` | {github_info['repo']} | {status_emoji} {result['status']} | {current} | {recommended} | {gap} | {result['message']} |")
+        else:
+            output.append("| Image | Status | Current | Recommended | Gap | Message |")
+            output.append("| --- | --- | --- | --- | --- | --- |")
+            
+            for result in filtered_results:
+                status_emoji = "✅" if result['status'] == 'UP-TO-DATE' else "⛔" if result['status'] == 'OUTDATED' else "⚠️" if result['status'] == 'WARNING' else "❓"
+                
+                current = result.get('current', 'N/A')
+                recommended = result.get('recommended', 'N/A')
+                gap = str(result.get('gap', 'N/A'))
+                
+                output.append(f"| `{result['image']}` | {status_emoji} {result['status']} | {current} | {recommended} | {gap} | {result['message']} |")
         
         # Conclusion
         output.append("\n## Conclusion")
@@ -273,7 +345,9 @@ class MarkdownFormatter(BaseFormatter):
             for img in summary['outdated_images']:
                 current = img.get('current', 'N/A')
                 recommended = img.get('recommended', 'N/A')
-                output.append(f"- `{img['image']}`: {current} → {recommended} ({img['message']})")
+                repository = img.get('repository', '')
+                repo_info = f" ({repository})" if repository else ""
+                output.append(f"- `{img['image']}`{repo_info}: {current} → {recommended} ({img['message']})")
         else:
             output.append("⚠️ **RESULT: WARNING** - Some images have warnings or unknown status")
         
@@ -283,7 +357,7 @@ class MarkdownFormatter(BaseFormatter):
 class HtmlFormatter(BaseFormatter):
     """Format results as HTML"""
     
-    def format(self, results, total_images, original_count=None):
+    def format(self, results, total_images, original_count=None, github_info=None):
         # Get filtered results and ignored images
         filtered_results = [r for r in results if r.get('image') != 'IGNORED_IMAGES_SUMMARY']
         ignored_info = next((r for r in results if r.get('image') == 'IGNORED_IMAGES_SUMMARY'), None)
@@ -320,6 +394,7 @@ class HtmlFormatter(BaseFormatter):
             .container { display: flex; justify-content: space-between; }
             .summary { flex: 1; margin-right: 20px; }
             .stats { flex: 1; }
+            .repo-info { background-color: #f8f9fa; padding: 10px; border-left: 4px solid #0366d6; margin-bottom: 20px; }
         </style>
         """
         
@@ -340,6 +415,19 @@ class HtmlFormatter(BaseFormatter):
         # Add timestamp
         if timestamp:
             html.append(f"<p><em>Generated on: {timestamp}</em></p>")
+            
+        # Add GitHub repository info if available
+        if github_info:
+            html.append("<div class='repo-info'>")
+            if 'org_or_user' in github_info and 'repo' in github_info:
+                html.append(f"<p><strong>GitHub Repository:</strong> {github_info['org_or_user']}/{github_info['repo']}</p>")
+            elif 'org_or_user' in github_info:
+                html.append(f"<p><strong>GitHub Organization/User:</strong> {github_info['org_or_user']}</p>")
+            if 'path' in github_info:
+                html.append(f"<p><strong>Dockerfile Path:</strong> {github_info['path']}</p>")
+            if 'url' in github_info:
+                html.append(f"<p><a href='{github_info['url']}' target='_blank'>View on GitHub</a></p>")
+            html.append("</div>")
         
         # Add summary counts
         html.append("<div class='container'>")
@@ -394,35 +482,106 @@ class HtmlFormatter(BaseFormatter):
         # Detailed results
         html.append("<h2>Detailed Results</h2>")
         html.append("<table>")
-        html.append("<tr><th>Image</th><th>Status</th><th>Current</th><th>Recommended</th><th>Gap</th><th>Message</th></tr>")
         
-        for result in filtered_results:
-            status_class = ""
-            if result['status'] == 'UP-TO-DATE':
-                status_class = "success"
-                status_badge = "<span class='badge badge-success'>UP-TO-DATE</span>"
-            elif result['status'] == 'OUTDATED':
-                status_class = "danger"
-                status_badge = "<span class='badge badge-danger'>OUTDATED</span>"
-            elif result['status'] == 'WARNING':
-                status_class = "warning"
-                status_badge = "<span class='badge badge-warning'>WARNING</span>"
-            else:
-                status_class = "unknown"
-                status_badge = "<span class='badge badge-unknown'>UNKNOWN</span>"
+        # Check if we have repository info in results
+        has_repo_info = any('repository' in result for result in filtered_results)
+        
+        # Dodaj kolumnę Repository, jeśli mamy informacje o repozytorium
+        if has_repo_info:
+            html.append("<tr><th>Image</th><th>Repository</th><th>Status</th><th>Current</th><th>Recommended</th><th>Gap</th><th>Message</th></tr>")
             
-            current = result.get('current', 'N/A')
-            recommended = result.get('recommended', 'N/A')
-            gap = str(result.get('gap', 'N/A'))
+            for result in filtered_results:
+                status_class = ""
+                if result['status'] == 'UP-TO-DATE':
+                    status_class = "success"
+                    status_badge = "<span class='badge badge-success'>UP-TO-DATE</span>"
+                elif result['status'] == 'OUTDATED':
+                    status_class = "danger"
+                    status_badge = "<span class='badge badge-danger'>OUTDATED</span>"
+                elif result['status'] == 'WARNING':
+                    status_class = "warning"
+                    status_badge = "<span class='badge badge-warning'>WARNING</span>"
+                else:
+                    status_class = "unknown"
+                    status_badge = "<span class='badge badge-unknown'>UNKNOWN</span>"
+                
+                current = result.get('current', 'N/A')
+                recommended = result.get('recommended', 'N/A')
+                gap = str(result.get('gap', 'N/A'))
+                repository = result.get('repository', 'N/A')
+                
+                html.append(f"<tr class='{status_class}'>")
+                html.append(f"<td><code>{result['image']}</code></td>")
+                html.append(f"<td>{repository}</td>")
+                html.append(f"<td>{status_badge}</td>")
+                html.append(f"<td>{current}</td>")
+                html.append(f"<td>{recommended}</td>")
+                html.append(f"<td>{gap}</td>")
+                html.append(f"<td>{result['message']}</td>")
+                html.append("</tr>")
+        elif github_info and 'repo' in github_info:
+            # Wersja dla pojedynczego repozytorium
+            html.append("<tr><th>Image</th><th>Repository</th><th>Status</th><th>Current</th><th>Recommended</th><th>Gap</th><th>Message</th></tr>")
             
-            html.append(f"<tr class='{status_class}'>")
-            html.append(f"<td><code>{result['image']}</code></td>")
-            html.append(f"<td>{status_badge}</td>")
-            html.append(f"<td>{current}</td>")
-            html.append(f"<td>{recommended}</td>")
-            html.append(f"<td>{gap}</td>")
-            html.append(f"<td>{result['message']}</td>")
-            html.append("</tr>")
+            for result in filtered_results:
+                status_class = ""
+                if result['status'] == 'UP-TO-DATE':
+                    status_class = "success"
+                    status_badge = "<span class='badge badge-success'>UP-TO-DATE</span>"
+                elif result['status'] == 'OUTDATED':
+                    status_class = "danger"
+                    status_badge = "<span class='badge badge-danger'>OUTDATED</span>"
+                elif result['status'] == 'WARNING':
+                    status_class = "warning"
+                    status_badge = "<span class='badge badge-warning'>WARNING</span>"
+                else:
+                    status_class = "unknown"
+                    status_badge = "<span class='badge badge-unknown'>UNKNOWN</span>"
+                
+                current = result.get('current', 'N/A')
+                recommended = result.get('recommended', 'N/A')
+                gap = str(result.get('gap', 'N/A'))
+                
+                html.append(f"<tr class='{status_class}'>")
+                html.append(f"<td><code>{result['image']}</code></td>")
+                html.append(f"<td>{github_info['repo']}</td>")  # Nazwa repozytorium z github_info
+                html.append(f"<td>{status_badge}</td>")
+                html.append(f"<td>{current}</td>")
+                html.append(f"<td>{recommended}</td>")
+                html.append(f"<td>{gap}</td>")
+                html.append(f"<td>{result['message']}</td>")
+                html.append("</tr>")
+        else:
+            # Standardowy format bez kolumny Repository
+            html.append("<tr><th>Image</th><th>Status</th><th>Current</th><th>Recommended</th><th>Gap</th><th>Message</th></tr>")
+            
+            for result in filtered_results:
+                status_class = ""
+                if result['status'] == 'UP-TO-DATE':
+                    status_class = "success"
+                    status_badge = "<span class='badge badge-success'>UP-TO-DATE</span>"
+                elif result['status'] == 'OUTDATED':
+                    status_class = "danger"
+                    status_badge = "<span class='badge badge-danger'>OUTDATED</span>"
+                elif result['status'] == 'WARNING':
+                    status_class = "warning"
+                    status_badge = "<span class='badge badge-warning'>WARNING</span>"
+                else:
+                    status_class = "unknown"
+                    status_badge = "<span class='badge badge-unknown'>UNKNOWN</span>"
+                
+                current = result.get('current', 'N/A')
+                recommended = result.get('recommended', 'N/A')
+                gap = str(result.get('gap', 'N/A'))
+                
+                html.append(f"<tr class='{status_class}'>")
+                html.append(f"<td><code>{result['image']}</code></td>")
+                html.append(f"<td>{status_badge}</td>")
+                html.append(f"<td>{current}</td>")
+                html.append(f"<td>{recommended}</td>")
+                html.append(f"<td>{gap}</td>")
+                html.append(f"<td>{result['message']}</td>")
+                html.append("</tr>")
         
         html.append("</table>")
         

@@ -26,7 +26,7 @@ def main():
     if len(sys.argv) < 2 or '--help' in sys.argv or '-h' in sys.argv:
         print("Usage: python3 main.py <path_to_Dockerfile> [options]")
         print("   or: python3 main.py github-scan [github-options]")
-        print("\nTypowe opcje analizy Dockerfile:")
+        print("\nCommon options:")
         print("  --tags: Show available tags for images")
         print("  --threshold N: Set the version gap threshold for marking images as outdated (default: 3)")
         print("  --level N: Force specific version level for comparison (1=major, 2=minor, 3=patch)")

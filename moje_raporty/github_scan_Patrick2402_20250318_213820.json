@@ -1,0 +1,129 @@
+{
+  "scan_date": "2025-03-18T21:38:20.888707",
+  "org_or_user": "Patrick2402",
+  "total_repos": 25,
+  "repos_with_dockerfiles": 2,
+  "duration_seconds": 10.333466053009033,
+  "results": [
+    {
+      "repository": "OldStyledApp",
+      "status": "success",
+      "message": "Przeanalizowano 1 plik\u00f3w Dockerfile",
+      "dockerfiles": [
+        {
+          "path": "Dockerfile",
+          "repo": "OldStyledApp",
+          "branch": "main",
+          "download_url": "https://raw.githubusercontent.com/Patrick2402/OldStyledApp/main/Dockerfile"
+        }
+      ],
+      "reports": [
+        {
+          "dockerfile": {
+            "path": "Dockerfile",
+            "repo": "OldStyledApp",
+            "branch": "main",
+            "download_url": "https://raw.githubusercontent.com/Patrick2402/OldStyledApp/main/Dockerfile"
+          },
+          "report_path": "./moje_raporty/OldStyledApp_Dockerfile_20250318_213818.html",
+          "total_images": 1,
+          "outdated": 0,
+          "warnings": 0,
+          "unknown": 0,
+          "results": [
+            {
+              "image": "node:22",
+              "status": "UP-TO-DATE",
+              "gap": 1,
+              "recommended": "23.10-bookworm",
+              "current": "22",
+              "message": "Image is 1 major version(s) behind but within threshold (3)",
+              "repository": "OldStyledApp"
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "image": "node:22",
+          "status": "UP-TO-DATE",
+          "gap": 1,
+          "recommended": "23.10-bookworm",
+          "current": "22",
+          "message": "Image is 1 major version(s) behind but within threshold (3)",
+          "repository": "OldStyledApp"
+        }
+      ],
+      "duration_seconds": 2.859360933303833
+    },
+    {
+      "repository": "Projekt-1-elektromagnetyzm",
+      "status": "success",
+      "message": "Przeanalizowano 1 plik\u00f3w Dockerfile",
+      "dockerfiles": [
+        {
+          "path": "Dockerfile",
+          "repo": "Projekt-1-elektromagnetyzm",
+          "branch": "main",
+          "download_url": "https://raw.githubusercontent.com/Patrick2402/Projekt-1-elektromagnetyzm/main/Dockerfile"
+        }
+      ],
+      "reports": [
+        {
+          "dockerfile": {
+            "path": "Dockerfile",
+            "repo": "Projekt-1-elektromagnetyzm",
+            "branch": "main",
+            "download_url": "https://raw.githubusercontent.com/Patrick2402/Projekt-1-elektromagnetyzm/main/Dockerfile"
+          },
+          "report_path": "./moje_raporty/Projekt-1-elektromagnetyzm_Dockerfile_20250318_213820.html",
+          "total_images": 2,
+          "outdated": 0,
+          "warnings": 0,
+          "unknown": 0,
+          "results": [
+            {
+              "image": "golang:1.24-alpine",
+              "status": "UP-TO-DATE",
+              "gap": 0,
+              "recommended": "1.24.1-bullseye",
+              "current": "1.24-alpine",
+              "message": "Image is up-to-date",
+              "repository": "Projekt-1-elektromagnetyzm"
+            },
+            {
+              "image": "alpine:3.19",
+              "status": "UP-TO-DATE",
+              "gap": 2,
+              "recommended": "3.21.3",
+              "current": "3.19",
+              "message": "Image is 2 minor version(s) behind but within threshold (3)",
+              "repository": "Projekt-1-elektromagnetyzm"
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "image": "golang:1.24-alpine",
+          "status": "UP-TO-DATE",
+          "gap": 0,
+          "recommended": "1.24.1-bullseye",
+          "current": "1.24-alpine",
+          "message": "Image is up-to-date",
+          "repository": "Projekt-1-elektromagnetyzm"
+        },
+        {
+          "image": "alpine:3.19",
+          "status": "UP-TO-DATE",
+          "gap": 2,
+          "recommended": "3.21.3",
+          "current": "3.19",
+          "message": "Image is 2 minor version(s) behind but within threshold (3)",
+          "repository": "Projekt-1-elektromagnetyzm"
+        }
+      ],
+      "duration_seconds": 4.013316869735718
+    }
+  ]
+}

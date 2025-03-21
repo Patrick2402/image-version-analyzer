@@ -105,6 +105,34 @@ def calculate_version_gap(current_tag, recommended_tag, version_level=1, custom_
         # Get the prefix format from the recommended tag
         prefix = 'v' if recommended_tag.startswith('v') else ''
         
+        # Special case for Python: better handle major version transitions
+        if image_base == 'python' and current_parts[0] != recommended_parts[0]:
+            print(f"Detecting Python major version transition: {current_parts[0]}.x -> {recommended_parts[0]}.x")
+            
+            # Calculate all intermediate versions
+            missing_versions = []
+            
+            # For transition from older to newer major version
+            if current_parts[0] < recommended_parts[0]:
+                # First, add all minor versions in the old major version (if applicable)
+                if current_parts[1] < 9:  # Assuming Python versions like 2.7, 2.8, 2.9 might exist
+                    for minor in range(current_parts[1] + 1, 10):
+                        version_str = f"{prefix}{current_parts[0]}.{minor}"
+                        if str(minor) not in skip_versions:
+                            missing_versions.append(version_str)
+                
+                # Then add all minor versions in the newer major version up to the recommended one
+                for minor in range(0, recommended_parts[1] + 1):
+                    version_str = f"{prefix}{recommended_parts[0]}.{minor}"
+                    if str(minor) not in skip_versions:
+                        missing_versions.append(version_str)
+            
+            # Total gap is the number of all intermediate versions
+            real_gap = len(missing_versions)
+            print(f"Calculated gap for Python: {real_gap} versions")
+            
+            return real_gap, missing_versions
+            
         # Compare version parts up to specified level
         for i in range(version_level):
             if i >= len(current_parts) or i >= len(recommended_parts):
@@ -201,8 +229,7 @@ def detect_version_level(tags, base_image_name, custom_rules=None):
         'centos': 1,       # CentOS uses single digit versions
         'alpine': 2,       # Alpine has frequent minor version updates (3.18, 3.19, etc.)
         'nginx': 2,        # nginx stays on 1.x for a long time
-        'node': 1,         # Node.js has meaningful major versions (14, 16, 18, etc.)
-        'python': 2,       # Python has meaningful minor versions (3.9, 3.10, etc.)
+        'node': 1,         # Node.js has meaningful major versions (14, 16, 18, etc.)     
         'php': 2,          # PHP has meaningful minor versions (8.0, 8.1, etc.)
         'golang': 2,       # Go has meaningful minor versions (1.18, 1.19, etc.)
         'postgres': 2,     # PostgreSQL has meaningful minor versions (14.1, 14.2, etc.)
@@ -213,9 +240,10 @@ def detect_version_level(tags, base_image_name, custom_rules=None):
     }
     
     if image_base in special_cases:
+        # Special case for Python - if comparing across major versions, handle differently
+        if image_base == 'python':
+            print(f"Using enhanced version level detection for Python")
         return special_cases[image_base]
-    
-    
     
     # Filter to just version tags
     version_tags = [tag for tag in tags if is_valid_version_tag(tag)]

@@ -4,3 +4,4 @@ venv
 *.pyo
 .DS_Store
 Dockerfile
+moje_raporty

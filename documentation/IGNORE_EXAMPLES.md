@@ -13,16 +13,16 @@ The analyzer supports several types of ignore patterns:
 
 ```bash
 # Ignore a specific image
-python main.py Dockerfile --tags --ignore python:3.9-alpine
+python run.py Dockerfile --tags --ignore python:3.9-alpine
 
 # Ignore multiple images
-python main.py Dockerfile --tags --ignore python:3.9* --ignore node:16
+python run.py Dockerfile --tags --ignore python:3.9'*' --ignore node:16
 
 # Ignore images using a pattern file
-python main.py Dockerfile --tags --ignore-images ignore-patterns.txt
+python run.py Dockerfile --tags --ignore-images ignore-patterns.txt
 
 # Combine both approaches
-python main.py Dockerfile --tags --ignore nginx:1.* --ignore-images ignore-patterns.txt
+python run.py Dockerfile --tags --ignore nginx:1.'*' --ignore-images ignore-patterns.txt
 ```
 
 ## Ignore File Format
@@ -132,7 +132,7 @@ You can use the ignore feature in CI/CD pipelines to focus on specific images:
 # GitHub Actions Example
 - name: Analyze Docker images
   run: |
-    python main.py Dockerfile --tags --output html --report-file report.html \
+    python run.py Dockerfile --tags --output html --report-file report.html \
     --ignore-images .github/docker-ignore-patterns.txt
 ```
 

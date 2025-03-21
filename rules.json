@@ -1,0 +1,11 @@
+{
+    "node": {
+      "level": 1,
+      "lts_versions": [16, 18, 20, 22, 24],
+      "step_by": 2,
+      "skip_versions": ["19", "21", "23"]
+    },
+    "debian": {
+      "level": 1
+    }
+  }

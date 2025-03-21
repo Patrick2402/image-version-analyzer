@@ -14,6 +14,7 @@ from src.image_ignore import parse_ignore_options
 from utils.formatters import get_formatter
 from utils.slack_notifier import send_slack_notification
 from src.github_scanner import github_scan
+from src.gitlab_scanner import gitlab_scan
 
 
 def main():
@@ -22,6 +23,12 @@ def main():
         github_scan(sys.argv[2:])
     else: 
         GITHUB_SCANNER_AVAILABLE = False
+
+    if len(sys.argv) > 1 and sys.argv[1] == "gitlab-scan":
+        GITLAB_SCANNER_AVAILABLE = True
+        gitlab_scan(sys.argv[2:])
+    else: 
+        GITLAB_SCANNER_AVAILABLE = False
 
     if len(sys.argv) < 2 or '--help' in sys.argv or '-h' in sys.argv:
         print("Usage: python3 main.py <path_to_Dockerfile> [options]")
@@ -63,6 +70,18 @@ def main():
             print("  --output-dir DIR: Directory to save reports (default: docker_analysis)")
             print("  --max-workers N: Maximum number of concurrent workers (default: 5)")
             print("\nGitHub Scanner can use all standard options like --threshold, --output, etc.")
+
+        if GITLAB_SCANNER_AVAILABLE:
+            print("\nGitLab Scanning Mode:")
+            print("  python3 main.py gitlab-scan [options]")
+            print("\nGitlab Scanning Options:")
+            print("  --gitlab-token TOKEN: Gitlab API token (required)")
+            print("  --gitlab-org ORG: Gitlab organization name")
+            print("  --gitlab-user USER: Gitlab username (if not using --gitlab-org)")
+            print("  --output-dir DIR: Directory to save reports (default: docker_analysis)")
+            print("  --max-workers N: Maximum number of concurrent workers (default: 5)")
+            print("\nGitLab Scanner can use all standard options like --threshold, --output, etc.")
+ 
         
         print("\nExample rules.json format:")
         print('''

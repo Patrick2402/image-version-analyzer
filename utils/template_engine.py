@@ -1,16 +1,8 @@
 import os
 import json
+import jinja2
 import pkg_resources
 from typing import Dict, Any, List, Optional
-
-# Try to import Jinja2, install if not available
-try:
-    import jinja2
-except ImportError:
-    print("Jinja2 not found. Installing...")
-    import subprocess
-    subprocess.check_call(["pip", "install", "jinja2"])
-    import jinja2
 
 class TemplateEngine:
     """Class for rendering HTML templates using Jinja2."""

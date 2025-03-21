@@ -32,7 +32,6 @@ def analyze_image_tags(image_name, image_count, total_images, threshold, force_l
     if not no_info:
         print("Downloading tags...")
     tags, recommended_tag = get_image_tags(image_name, private_registries)
-    
     if not tags:
         if not no_info:
             print("Tags not found or could not access repository.")

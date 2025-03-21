@@ -1,6 +1,7 @@
 import re
 from packaging import version
 from collections import defaultdict
+from utils.registry_utils import is_valid_version_tag
 
 def check_lts_version(current_tag, recommended_tag, custom_rules, image_base):
     """Check if a version is valid according to LTS rules."""
@@ -214,7 +215,7 @@ def detect_version_level(tags, base_image_name, custom_rules=None):
     if image_base in special_cases:
         return special_cases[image_base]
     
-    from registry_utils import is_valid_version_tag
+    
     
     # Filter to just version tags
     version_tags = [tag for tag in tags if is_valid_version_tag(tag)]

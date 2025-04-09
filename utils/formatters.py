@@ -83,7 +83,7 @@ class BaseFormatter:
 
 
 class TextFormatter(BaseFormatter):
-    """Format results as plain text"""
+    """Format results as plain text with ultra simple formatting"""
     
     def format(self, results, total_images, original_count=None, github_info=None):
         output = []
@@ -91,127 +91,51 @@ class TextFormatter(BaseFormatter):
         # Add timestamp
         timestamp = self.get_timestamp()
         if timestamp:
-            output.append(f"Analysis Time: {timestamp}\n")
+            output.append(f"Analysis Time: {timestamp}")
         
-        # Add GitHub info if available
-        if github_info:
-            output.append(f"GitHub Repository: {github_info.get('org_or_user')}/{github_info.get('repo')}")
-            output.append(f"Dockerfile Path: {github_info.get('path')}")
-            output.append(f"GitHub URL: {github_info.get('url')}\n")
-        
-        # If some images were ignored, show that
+        # Header
         if original_count and original_count > total_images:
-            ignored_count = original_count - total_images
-            output.append(f"Found {original_count} image(s) in Dockerfile, {ignored_count} ignored.")
+            output.append(f"Found {original_count} images in Dockerfile, {original_count - total_images} ignored")
         else:
             output.append(f"Found {total_images} image(s) in Dockerfile:")
+            for i, result in enumerate([r for r in results if r.get('image') != 'IGNORED_IMAGES_SUMMARY'], 1):
+                output.append(f"{i}. {result['image']}")
         
-        # Get filtered results (exclude the special IGNORED_IMAGES_SUMMARY entry)
-        filtered_results = [r for r in results if r.get('image') != 'IGNORED_IMAGES_SUMMARY']
-        
-        # List all analyzed images
-        for i, result in enumerate(filtered_results, 1):
-            output.append(f"{i}. {result['image']}")
-        
-        # Find ignored images info if present
-        ignored_info = next((r for r in results if r.get('image') == 'IGNORED_IMAGES_SUMMARY'), None)
-        if ignored_info and 'ignored_images' in ignored_info:
-            output.append("\nIgnored images:")
-            for img in ignored_info['ignored_images']:
-                output.append(f"  - {img}")
-        
-        output.append("\n" + "="*50)
-        output.append("ANALYSIS SUMMARY")
-        output.append("="*50)
-        
+        # Get summary stats
         summary = self.get_summary(results)
         
+        # Analysis summary
+        output.append("\n==================================================")
+        output.append("ANALYSIS SUMMARY")
+        output.append("==================================================")
+        
+        # Add outdated images summary
         if summary['outdated'] > 0:
             output.append(f"\n⛔ {summary['outdated']} OUTDATED IMAGE(S):")
             for img in summary['outdated_images']:
                 output.append(f"  - {img['image']} : {img['message']}")
         
+        # Add warning images summary
         if summary['warnings'] > 0:
             output.append(f"\n⚠️ {summary['warnings']} WARNING(S):")
             for img in summary['warning_images']:
                 output.append(f"  - {img['image']} : {img['message']}")
         
+        # Add unknown images summary
         if summary['unknown'] > 0:
             output.append(f"\n❓ {summary['unknown']} UNKNOWN STATUS:")
             for img in summary['unknown_images']:
                 output.append(f"  - {img['image']} : {img['message']}")
         
+        # Final status summary
         if not summary['outdated'] and not summary['warnings'] and not summary['unknown']:
             output.append("\n✅ ALL IMAGES UP-TO-DATE")
-        elif summary['outdated']:
+        elif summary['outdated'] > 0:
             output.append("\n⛔ RESULT: OUTDATED - At least one image is outdated beyond threshold")
         else:
             output.append("\n⚠️ RESULT: WARNING - Some images have warnings or unknown status")
         
-        # Add security section if available
-        security_section = self.format_security_section(results)
-        if security_section:
-            output.append(security_section)
-        
         return "\n".join(output)
-    
-    def format_security_section(self, results):
-        """Format security information section for text output"""
-        security_output = []
-        
-        # Check if we have security information
-        has_security_info = any('security' in result for result in results)
-        if not has_security_info:
-            return ""
-        
-        security_output.append("\n" + "="*50)
-        security_output.append("SECURITY SCAN RESULTS")
-        security_output.append("="*50)
-        
-        # Count security statuses
-        vulnerable_images = []
-        secure_images = []
-        error_images = []
-        
-        for result in results:
-            if 'security' in result and result['security']['status'] == 'VULNERABLE':
-                vulnerable_images.append(result)
-            elif 'security' in result and result['security']['status'] == 'SECURE':
-                secure_images.append(result)
-            elif 'security' in result and result['security']['status'] == 'ERROR':
-                error_images.append(result)
-        
-        # Add summary stats
-        security_output.append(f"\nImages scanned for vulnerabilities: {len(vulnerable_images) + len(secure_images) + len(error_images)}")
-        
-        if vulnerable_images:
-            security_output.append(f"⛔ {len(vulnerable_images)} VULNERABLE IMAGE(S):")
-            for img in vulnerable_images:
-                summary = img['security']['summary']
-                severities = summary['severities']
-                security_output.append(f"  - {img['image']}: {summary['total']} vulnerabilities found")
-                security_output.append(f"    Critical: {severities['critical']}, High: {severities['high']}, " +
-                           f"Medium: {severities['medium']}, Low: {severities['low']}")
-                security_output.append(f"    Fixable: {summary['fixable']} vulnerability/ies")
-        
-        if secure_images:
-            security_output.append(f"\n✅ {len(secure_images)} SECURE IMAGE(S):")
-            for img in secure_images:
-                security_output.append(f"  - {img['image']} : No vulnerabilities found")
-        
-        if error_images:
-            security_output.append(f"\n❓ {len(error_images)} ERROR DURING SCAN:")
-            for img in error_images:
-                security_output.append(f"  - {img['image']} : {img['security']['message']}")
-        
-        if vulnerable_images:
-            security_output.append("\n⛔ SECURITY RESULT: VULNERABLE - Vulnerabilities found in one or more images")
-        elif error_images:
-            security_output.append("\n⚠️ SECURITY RESULT: WARNING - Errors during security scan")
-        else:
-            security_output.append("\n✅ SECURITY RESULT: SECURE - No vulnerabilities found")
-        
-        return "\n".join(security_output)
 
 
 class JsonFormatter(BaseFormatter):

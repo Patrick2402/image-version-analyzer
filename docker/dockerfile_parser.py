@@ -8,10 +8,11 @@ def extract_base_images(dockerfile_path, no_info):
             return []
             
         with open(dockerfile_path, 'r') as dockerfile:
+            images = []
             content = dockerfile.read()
             pattern = r'^\s*FROM\s+(--platform=[^\s]+\s+)?([^\s]+)(\s+AS\s+[^\s]+)?'
             
-            images = []
+            
             for line in content.split('\n'):
                 match = re.match(pattern, line, re.IGNORECASE)
                 if match:

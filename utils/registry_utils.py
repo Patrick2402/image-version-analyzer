@@ -43,11 +43,44 @@ def get_image_tags(image_name, private_registries=None):
         image = f"library/{image}"
     
     try:
+        # First try a larger page size to get more tags at once
         url = f"https://hub.docker.com/v2/repositories/{image}/tags?page_size=100"
         with urllib.request.urlopen(url) as response:
             data = json.loads(response.read().decode('utf-8'))
             tags = [tag['name'] for tag in data.get('results', [])]
             
+            # If there are more tags and we're looking for a variant, fetch more pages
+            next_url = data.get('next')
+            if next_url and current_tag and '-' in current_tag:
+                # Extract the variant
+                variant_match = re.match(r'^v?\d+(\.\d+)*-(.+)$', current_tag)
+                if variant_match:
+                    variant = variant_match.group(2)
+                    # Fetch up to 5 more pages to find matching variants
+                    page_count = 1
+                    while next_url and page_count < 5:
+                        try:
+                            with urllib.request.urlopen(next_url) as next_response:
+                                next_data = json.loads(next_response.read().decode('utf-8'))
+                                next_tags = [tag['name'] for tag in next_data.get('results', [])]
+                                tags.extend(next_tags)
+                                next_url = next_data.get('next')
+                                page_count += 1
+                                
+                                # If we found a tag with our variant and the newest version, stop fetching
+                                # This is an optimization to avoid fetching all pages
+                                newest_version_found = False
+                                for tag in next_tags:
+                                    if f"-{variant}" in tag and any(digit in tag for digit in ["1.24", "1.23"]):  # For golang
+                                        newest_version_found = True
+                                        break
+                                if newest_version_found:
+                                    break
+                        except Exception as e:
+                            print(f"Error fetching additional tags page: {e}")
+                            break
+            
+            # Pass the current tag to find_recommended_tag
             recommended_tag = find_recommended_tag(tags, current_tag)
             
             return tags, recommended_tag
@@ -75,12 +108,20 @@ def is_valid_version_tag(tag):
     return re.match(r'^v?\d+(\.\d+){0,3}(-[a-z0-9]+)?$', tag) is not None
 
 def find_recommended_tag(tags, current_tag=None):
-    """Finds the newest numeric version from available tags."""
+    """Finds the newest numeric version from available tags with preference for matching variant."""
     if not tags:
         return None
     
+    # Extract variant from current tag if it exists
+    current_variant = None
+    if current_tag:
+        variant_match = re.match(r'^v?\d+(\.\d+)*-(.+)$', current_tag)
+        if variant_match:
+            current_variant = variant_match.group(2)
+            print(f"Current tag variant: {current_variant}")
+    
     # For tags with 'v' prefix, separate the base versions from variants
-    clean_tags = {}
+    base_versions = {}  # Map from base version to list of tags
     
     for tag in tags:
         # Skip development/test versions
@@ -97,35 +138,61 @@ def find_recommended_tag(tags, current_tag=None):
             if not is_valid_version_tag(base_version):
                 continue
                 
-            # Save the original tag for later retrieval
-            if base_version not in clean_tags:
-                clean_tags[base_version] = tag
+            # Save all tags for this base version
+            if base_version not in base_versions:
+                base_versions[base_version] = []
+            base_versions[base_version].append(tag)
     
-    # Process the clean base versions to find the newest
+    # Process the base versions to find the newest
     numeric_versions = []
-    for base_version in clean_tags.keys():
+    for base_version, version_tags in base_versions.items():
         try:
             # Remove 'v' prefix for version comparison if present
             from packaging import version
             version_str = base_version[1:] if base_version.startswith('v') else base_version
             v = version.parse(version_str)
-            numeric_versions.append((v, clean_tags[base_version]))
-        except:
-            pass
+            numeric_versions.append((v, base_version, version_tags))
+        except Exception as e:
+            print(f"Error parsing version {base_version}: {e}")
     
-    # Return the tag with the newest version
-    if numeric_versions:
-        return sorted(numeric_versions, key=lambda x: x[0])[-1][1]
+    if not numeric_versions:
+        return None
     
-    # Fallbacks if no clean numeric versions found
-    if 'stable' in tags:
-        return 'stable'
+    # Sort by version
+    sorted_versions = sorted(numeric_versions, key=lambda x: x[0])
     
-    for tag in tags:
-        if tag != 'latest':
+    # Get the newest version
+    newest_version_info = sorted_versions[-1]
+    newest_base_version = newest_version_info[1]
+    newest_version_tags = newest_version_info[2]
+    
+    # If we have a current variant, try to find a matching tag with the newest version
+    if current_variant:
+        # Look for exact variant match in the newest version
+        for tag in newest_version_tags:
+            tag_variant_match = re.match(r'^v?\d+(\.\d+)*-(.+)$', tag)
+            if tag_variant_match and tag_variant_match.group(2) == current_variant:
+                return tag
+        
+        # If we didn't find an exact match, construct one to search for
+        variant_search = f"{newest_base_version}-{current_variant}"
+        
+        # Look for tags that match our constructed variant pattern
+        matching_tags = [tag for tag in tags if tag.startswith(variant_search)]
+        if matching_tags:
+            print(f"Found matching variant for newest version: {matching_tags[0]}")
+            return matching_tags[0]
+        
+        print(f"Warning: Could not find variant '{current_variant}' for newest version {newest_base_version}")
+    
+    # Fall back to the newest tag, preferring the simplest one
+    # If there's a clean version with no variant, use that
+    for tag in newest_version_tags:
+        if tag == newest_base_version:
             return tag
     
-    return tags[0] if tags else None
+    # Otherwise return the first tag for the newest version
+    return newest_version_tags[0]
 
 def get_public_image_name(image_name, private_registries=None):
     """

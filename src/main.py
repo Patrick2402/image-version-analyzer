@@ -1,226 +1,222 @@
 #!/usr/bin/env python3
-import re
+import argparse
 import sys
 import os.path
 import json
-import urllib.request
-from packaging import version
-from collections import defaultdict
+import time
+import re
+from colorama import init, Fore, Style
 
 from docker.dockerfile_parser import extract_base_images
 from src.image_analyzer import analyze_image_tags
 from utils.utils import parse_private_registries, load_custom_rules
-from src.image_ignore import parse_ignore_options
+from src.image_ignore import parse_ignore_options, ImageIgnoreManager
 from utils.formatters import get_formatter
 from utils.slack_notifier import send_slack_notification
 from src.github_scanner import github_scan
 from src.gitlab_scanner import gitlab_scan
+from utils.registry_utils import get_image_tags, is_valid_version_tag
 
 
-def main():
-    if len(sys.argv) > 1 and sys.argv[1] == "github-scan":
-        GITHUB_SCANNER_AVAILABLE = True
-        github_scan(sys.argv[2:])
-    else: 
-        GITHUB_SCANNER_AVAILABLE = False
-
-    if len(sys.argv) > 1 and sys.argv[1] == "gitlab-scan":
-        GITLAB_SCANNER_AVAILABLE = True
-        gitlab_scan(sys.argv[2:])
-    else: 
-        GITLAB_SCANNER_AVAILABLE = False
-
-    if len(sys.argv) < 2 or '--help' in sys.argv or '-h' in sys.argv:
-        print("Usage: python3 main.py <path_to_Dockerfile> [options]")
-        print("   or: python3 main.py github-scan [github-options]")
-        print("\nCommon options:")
-        print("  --tags: Show available tags for images")
-        print("  --threshold N: Set the version gap threshold for marking images as outdated (default: 3)")
-        print("  --level N: Force specific version level for comparison (1=major, 2=minor, 3=patch)")
-        print("  --private-registry [REGISTRY]: Mark images from specified private registry")
-        print("  --private-registries-file FILE: File containing list of private registries")
-        print("  --rules FILE: JSON file with custom rules for specific images")
-        print("  --no-info: Do not show detailed information about images")
-        
-        # Output format options
-        print("\nOutput Options:")
-        print("  --output FORMAT: Specify output format (text, json, html, csv, markdown)")
-        print("  --report-file PATH: Save analysis results to specified file")
-        print("  --no-timestamp: Do not include timestamp in the report")
-        
-        # Image ignore options
-        print("\nImage Ignore Options:")
-        print("  --ignore PATTERN: Ignore specific image pattern (wildcards supported, can be specified multiple times)")
-        print("  --ignore-images FILE: Path to file containing list of images to ignore")
-        
-        # Slack notification options
-        print("\nSlack Notification Options:")
-        print("  --slack-notify: Send notification to Slack about analysis results")
-        print("  --slack-webhook URL: Webhook URL for Slack notifications (can also use SLACK_WEBHOOK_URL env variable)")
-        print("  --report-url URL: Include a URL to a detailed report in the Slack notification")
-        
-        # GitHub scanning options (jeśli dostępne)
-        if GITHUB_SCANNER_AVAILABLE:
-            print("\nGitHub Scanning Mode:")
-            print("  python3 main.py github-scan [options]")
-            print("\nGitHub Scanning Options:")
-            print("  --github-token TOKEN: GitHub API token (required)")
-            print("  --github-org ORG: GitHub organization name")
-            print("  --github-user USER: GitHub username (if not using --github-org)")
-            print("  --output-dir DIR: Directory to save reports (default: docker_analysis)")
-            print("  --max-workers N: Maximum number of concurrent workers (default: 5)")
-            print("\nGitHub Scanner can use all standard options like --threshold, --output, etc.")
-
-        if GITLAB_SCANNER_AVAILABLE:
-            print("\nGitLab Scanning Mode:")
-            print("  python3 main.py gitlab-scan [options]")
-            print("\nGitlab Scanning Options:")
-            print("  --gitlab-token TOKEN: Gitlab API token (required)")
-            print("  --gitlab-org ORG: Gitlab organization name")
-            print("  --gitlab-user USER: Gitlab username (if not using --gitlab-org)")
-            print("  --output-dir DIR: Directory to save reports (default: docker_analysis)")
-            print("  --max-workers N: Maximum number of concurrent workers (default: 5)")
-            print("\nGitLab Scanner can use all standard options like --threshold, --output, etc.")
- 
-        
-        print("\nExample rules.json format:")
-        print('''
-{
-  "node": {
-    "level": 1,
-    "lts_versions": [16, 18, 20, 22, 24],
-    "step_by": 2,
-    "skip_versions": ["19", "21", "23"]
-  },
-  "debian": {
-    "level": 1
-  }
-}
-''')
-        print("\nExample ignore file format:")
-        print('''
-# Lines starting with # are comments
-# Each line is a pattern to ignore
-# Wildcard (*) is supported
-python:3.9*
-nginx:1.1*
-# Use regex: prefix for regex patterns
-regex:^debian:(?!11).*
-''')
-        return
+def parse_arguments():
+    """Parse command line arguments with better handling using argparse"""
+    parser = argparse.ArgumentParser(description="Docker Image Version Analyzer")
+    subparsers = parser.add_subparsers(dest="command", help="Command to run")
     
-    dockerfile_path = sys.argv[1]
-    show_tags = "--tags" in sys.argv
+    # GitHub scanner subcommand
+    github_parser = subparsers.add_parser("github-scan", help="Scan GitHub repositories")
+    github_parser.add_argument("--github-token", help="GitHub API token")
+    github_parser.add_argument("--github-org", help="GitHub organization name")
+    github_parser.add_argument("--github-user", help="GitHub username")
+    github_parser.add_argument("--output-dir", help="Directory to save reports", default="docker_analysis")
+    github_parser.add_argument("--max-workers", type=int, help="Maximum number of concurrent workers", default=5)
     
-    # Parse private registries
-    # This is done before parsing other options to allow private registries to be used in custom rules :) Patryk
-    private_registries = parse_private_registries(sys.argv)
+    # GitLab scanner subcommand
+    gitlab_parser = subparsers.add_parser("gitlab-scan", help="Scan GitLab repositories")
+    gitlab_parser.add_argument("--gitlab-token", help="GitLab API token")
+    gitlab_parser.add_argument("--gitlab-org", help="GitLab organization name")
+    gitlab_parser.add_argument("--gitlab-user", help="GitLab username")
+    gitlab_parser.add_argument("--output-dir", help="Directory to save reports", default="docker_analysis")
+    gitlab_parser.add_argument("--max-workers", type=int, help="Maximum number of concurrent workers", default=5)
+    
+    # Main command for Dockerfile analysis
+    main_parser = subparsers.add_parser("analyze", help="Analyze a Dockerfile")
+    main_parser.add_argument("dockerfile", help="Path to Dockerfile")
+    main_parser.add_argument("--tags", action="store_true", help="Show available tags for images")
+    main_parser.add_argument("--threshold", type=int, default=3, help="Version gap threshold for marking images as outdated")
+    main_parser.add_argument("--level", type=int, choices=[1, 2, 3], help="Force specific version level (1=major, 2=minor, 3=patch)")
+    main_parser.add_argument("--private-registry", action="append", help="Mark images from specified private registry")
+    main_parser.add_argument("--private-registries-file", help="File containing list of private registries")
+    main_parser.add_argument("--rules", help="JSON file with custom rules for specific images")
+    main_parser.add_argument("--no-info", action="store_true", help="Do not show detailed information about images")
+    main_parser.add_argument("--no-color", action="store_true", help="Disable colored output")
+    
+    # Output options
+    output_group = main_parser.add_argument_group("Output Options")
+    output_group.add_argument("--output", choices=["text", "json", "html", "csv", "markdown"], default="text", 
+                             help="Specify output format")
+    output_group.add_argument("--report-file", help="Save analysis results to specified file")
+    output_group.add_argument("--no-timestamp", action="store_true", help="Do not include timestamp in the report")
+    
+    # Image ignore options
+    ignore_group = main_parser.add_argument_group("Image Ignore Options")
+    ignore_group.add_argument("--ignore", action="append", help="Ignore specific image pattern (can be specified multiple times)")
+    ignore_group.add_argument("--ignore-images", help="Path to file containing list of images to ignore")
+    
+    # Slack notification options
+    slack_group = main_parser.add_argument_group("Slack Notification Options")
+    slack_group.add_argument("--slack-notify", action="store_true", help="Send notification to Slack about analysis results")
+    slack_group.add_argument("--slack-webhook", help="Webhook URL for Slack notifications")
+    slack_group.add_argument("--report-url", help="Include a URL to a detailed report in the Slack notification")
+    
+    # Add common options to all subparsers
+    for subparser in [github_parser, gitlab_parser]:
+        subparser.add_argument("--tags", action="store_true", help="Show available tags for images")
+        subparser.add_argument("--threshold", type=int, default=3, help="Version gap threshold")
+        subparser.add_argument("--level", type=int, choices=[1, 2, 3], help="Force specific version level")
+        subparser.add_argument("--rules", help="JSON file with custom rules")
+        subparser.add_argument("--output", choices=["text", "json", "html", "csv", "markdown"], default="html")
+        subparser.add_argument("--no-timestamp", action="store_true", help="Do not include timestamp")
+        subparser.add_argument("--ignore", action="append", help="Ignore specific image pattern")
+        subparser.add_argument("--ignore-images", help="File with images to ignore")
+        subparser.add_argument("--slack-notify", action="store_true", help="Send Slack notification")
+        subparser.add_argument("--slack-webhook", help="Webhook URL for Slack")
+        subparser.add_argument("--no-info", action="store_true", help="Do not show detailed information")
+        subparser.add_argument("--no-color", action="store_true", help="Disable colored output")
+    
+    # Handle the case when no arguments are provided
+    if len(sys.argv) == 1:
+        # Default to analyze subcommand when no command is specified
+        sys.argv.append("analyze")
+    
+    # Handle default analyze command when only providing a Dockerfile path
+    if len(sys.argv) > 1 and not sys.argv[1].startswith("-") and sys.argv[1] not in ["analyze", "github-scan", "gitlab-scan", "--help", "-h"]:
+        dockerfile_path = sys.argv[1]
+        sys.argv[1] = "analyze"
+        sys.argv.insert(2, dockerfile_path)
+    
+    return parser.parse_args()
+
+
+def setup_ignore_manager(args):
+    """Set up the image ignore manager from arguments"""
+    ignore_manager = ImageIgnoreManager()
+    
+    # Add patterns from --ignore arguments
+    if args.ignore:
+        for pattern in args.ignore:
+            ignore_manager.add_pattern(pattern)
+    
+    # Add patterns from --ignore-images file
+    if args.ignore_images:
+        ignore_manager.load_patterns_from_file(args.ignore_images)
+    
+    return ignore_manager
+
+
+def filter_similar_tags(tags, current_tag):
+    """Filter tags to show only ones similar to current tag"""
+    if not current_tag:
+        return tags
+        
+    # Extract variant from current tag if it exists
+    current_variant = None
+    variant_match = re.match(r'^v?\d+(\.\d+)*(-(.+))?$', current_tag)
+    if variant_match and variant_match.group(2):
+        current_variant = variant_match.group(3)
+    
+    # If we have a variant, filter to show only tags with same variant
+    if current_variant:
+        similar_tags = [tag for tag in tags if f"-{current_variant}" in tag]
+        if similar_tags:
+            return similar_tags
+    
+    # If we have a 'v' prefix, filter to show tags with same prefix pattern
+    if current_tag.startswith('v'):
+        v_tags = [tag for tag in tags if tag.startswith('v')]
+        if v_tags:
+            return v_tags
+    
+    # Otherwise, show clean version tags without variants when possible
+    clean_tags = []
+    for tag in tags:
+        # Try to find tags that are just version numbers
+        if re.match(r'^v?\d+(\.\d+)*$', tag):
+            clean_tags.append(tag)
+    
+    if clean_tags:
+        return clean_tags
+    
+    # Fallback to all valid version tags
+    return tags
+
+
+def analyze_dockerfile(args):
+    """Analyze a Dockerfile based on the provided arguments"""
+    # Initialize colorama for colored terminal output
+    init(autoreset=True)
+    if args.no_color:
+        init(autoreset=True, strip=True)
+    
+    # Print header
+    if not args.no_color:
+        print(f"\n{Fore.CYAN}╔══════════════════════════════════════════════════════════════════╗{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}║            Docker Image Version Analyzer v1.4.0                  ║{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}╚══════════════════════════════════════════════════════════════════╝{Style.RESET_ALL}")
+    else:
+        print("\n=================================================================")
+        print("                Docker Image Version Analyzer                     ")
+        print("=================================================================")
+    
+    # Get private registries
+    private_registries = []
+    
+    if args.private_registry:
+        private_registries.extend(args.private_registry)
+    
+    if args.private_registries_file:
+        try:
+            with open(args.private_registries_file, 'r') as f:
+                for line in f:
+                    registry = line.strip()
+                    if registry and not registry.startswith('#'):
+                        private_registries.append(registry)
+        except Exception as e:
+            print(f"{Fore.YELLOW if not args.no_color else ''}Error reading private registries file: {e}{Style.RESET_ALL if not args.no_color else ''}")
+    
     if private_registries:
-        print("Using private registries:")
+        print(f"{Fore.BLUE if not args.no_color else ''}• Using private registries:{Style.RESET_ALL if not args.no_color else ''}")
         for registry in private_registries:
             print(f"  - {registry}")
     
-    # Parse custom rules
+    # Load custom rules
     custom_rules = {}
-    if "--rules" in sys.argv:
-        try:
-            idx = sys.argv.index("--rules")
-            if idx + 1 < len(sys.argv) and not sys.argv[idx + 1].startswith("--"):
-                rules_file = sys.argv[idx + 1]
-                custom_rules = load_custom_rules(rules_file)
-        except ValueError:
-            pass
+    if args.rules:
+        custom_rules = load_custom_rules(args.rules)
+        if custom_rules:
+            print(f"{Fore.BLUE if not args.no_color else ''}• Loaded {len(custom_rules)} custom rules{Style.RESET_ALL if not args.no_color else ''}")
     
-    # Parse ignore options
-    ignore_manager = parse_ignore_options(sys.argv)
+    # Display threshold
+    print(f"{Fore.BLUE if not args.no_color else ''}• Version threshold: {args.threshold}{Style.RESET_ALL if not args.no_color else ''}")
     
-    # Parse threshold argument
-    threshold = 3
+    # Set up ignore manager
+    ignore_manager = setup_ignore_manager(args)
+    if ignore_manager.get_patterns():
+        print(f"{Fore.BLUE if not args.no_color else ''}• Using {len(ignore_manager.get_patterns())} ignore patterns{Style.RESET_ALL if not args.no_color else ''}")
     
-    for i, arg in enumerate(sys.argv):
-        if arg == "--threshold" and i + 1 < len(sys.argv):
-            try:
-                threshold = int(sys.argv[i + 1])
-                print(f"Using version gap threshold: {threshold}")
-            except ValueError:
-                print(f"Warning: Invalid threshold value. Using default: {threshold}")
+    # Extract images from Dockerfile
+    start_time = time.time()
+    print(f"\n{Fore.BLUE if not args.no_color else ''}• Analyzing {args.dockerfile}{Style.RESET_ALL if not args.no_color else ''}")
     
-    # Parse version level argument
-    force_level = None
-    for i, arg in enumerate(sys.argv):
-        if arg == "--level" and i + 1 < len(sys.argv):
-            try:
-                level = int(sys.argv[i + 1])
-                if 1 <= level <= 3:
-                    force_level = level
-                    level_name = {1: "major", 2: "minor", 3: "patch"}[level]
-                    print(f"Forcing {level_name} version level ({level}) for all images")
-                else:
-                    print(f"Warning: Level must be between 1 and 3. Using automatic detection.")
-            except ValueError:
-                print(f"Warning: Invalid level value. Using automatic detection.")
-    
-    # Parse output format options
-    output_format = 'text'  # Default
-    report_file = None
-    include_timestamp = True
-    
-    if '--output' in sys.argv:
-        try:
-            idx = sys.argv.index('--output')
-            if idx + 1 < len(sys.argv) and not sys.argv[idx + 1].startswith('--'):
-                output_format = sys.argv[idx + 1].lower()
-                if output_format not in ['text', 'json', 'html', 'csv', 'markdown']:
-                    print(f"Warning: Invalid output format '{output_format}'. Using 'text'.")
-                    output_format = 'text'
-        except (ValueError, IndexError):
-            pass
-    
-    if '--report-file' in sys.argv:
-        try:
-            idx = sys.argv.index('--report-file')
-            if idx + 1 < len(sys.argv) and not sys.argv[idx + 1].startswith('--'):
-                report_file = sys.argv[idx + 1]
-        except (ValueError, IndexError):
-            pass
-    
-    if '--no-timestamp' in sys.argv:
-        include_timestamp = False
-    
-    if '--no-info' in sys.argv:
-        no_info = True
-    else:
-        no_info = False
-
-    # Parse Slack notification options
-    slack_webhook = None
-    send_slack = False
-    report_url = None
-    
-    if '--slack-notify' in sys.argv:
-        send_slack = True
-    
-    if '--slack-webhook' in sys.argv:
-        try:
-            idx = sys.argv.index('--slack-webhook')
-            if idx + 1 < len(sys.argv) and not sys.argv[idx + 1].startswith('--'):
-                slack_webhook = sys.argv[idx + 1]
-        except (ValueError, IndexError):
-            pass
-    
-    if '--report-url' in sys.argv:
-        try:
-            idx = sys.argv.index('--report-url')
-            if idx + 1 < len(sys.argv) and not sys.argv[idx + 1].startswith('--'):
-                report_url = sys.argv[idx + 1]
-        except (ValueError, IndexError):
-            pass
-    
-    image_info_list = extract_base_images(dockerfile_path, no_info=False)
+    try:
+        image_info_list = extract_base_images(args.dockerfile, no_info=args.no_info)
+    except Exception as e:
+        print(f"{Fore.RED if not args.no_color else ''}Error parsing Dockerfile: {e}{Style.RESET_ALL if not args.no_color else ''}")
+        return 1
     
     if not image_info_list:
-        print("No valid images found in Dockerfile.")
-        sys.exit(1)
+        print(f"{Fore.YELLOW if not args.no_color else ''}No valid images found in Dockerfile.{Style.RESET_ALL if not args.no_color else ''}")
+        return 1
     
     # Filter out ignored images
     original_count = len(image_info_list)
@@ -235,61 +231,78 @@ regex:^debian:(?!11).*
     
     # Print information about ignored images
     if ignored_images:
-        print(f"Ignoring {len(ignored_images)} image(s):")
+        print(f"{Fore.YELLOW if not args.no_color else ''}• Ignoring {len(ignored_images)} image(s):{Style.RESET_ALL if not args.no_color else ''}")
         for img in ignored_images:
             print(f"  - {img}")
     
     if not filtered_image_info_list:
-        print("All images are ignored. Nothing to analyze.")
-        sys.exit(0)
+        print(f"{Fore.YELLOW if not args.no_color else ''}All images are ignored. Nothing to analyze.{Style.RESET_ALL if not args.no_color else ''}")
+        return 0
     
     # Update image_info_list to filtered version
     image_info_list = filtered_image_info_list
     total_images = len(image_info_list)
     
-    # List images found in dockerfile but don't print yet if using non-text output
-    if output_format == 'text':
-        print(f"Found {total_images} image{'s' if total_images > 1 else ''} in Dockerfile:")
-        for i, info in enumerate(image_info_list, 1):
-            stage_info = f" (stage: {info['stage']})" if info['stage'] else ""
-            print(f"{i}. {info['image']}{stage_info}")
+    # List images found in Dockerfile
+    print(f"\n{Fore.GREEN if not args.no_color else ''}Found {total_images} image{'s' if total_images > 1 else ''} in Dockerfile:{Style.RESET_ALL if not args.no_color else ''}")
+    for i, info in enumerate(image_info_list, 1):
+        stage_info = f" {Fore.BLUE if not args.no_color else ''}(stage: {info['stage']}){Style.RESET_ALL if not args.no_color else ''}" if info['stage'] else ""
+        print(f"{Fore.WHITE if not args.no_color else ''}{i}. {info['image']}{stage_info}{Style.RESET_ALL if not args.no_color else ''}")
     
+    # Analyze each image
     outdated_images = []
     warning_images = []
     unknown_images = []
     all_results = []
     
-    if show_tags:
-        # Redirect output to a buffer if not using text format
-        original_stdout = sys.stdout
-        if output_format != 'text':
-            sys.stdout = open(os.devnull, 'w')  # Redirect to /dev/null
+    # Always perform the analysis
+    for i, info in enumerate(image_info_list, 1):
+        # Extract current tag from image name for later use with tag filtering
+        parts = info['image'].split(':')
+        current_tag = parts[1] if len(parts) > 1 else None
         
-        for i, info in enumerate(image_info_list, 1):
-            status = analyze_image_tags(
-                info['image'], 
-                i, 
-                len(image_info_list), 
-                threshold, 
-                force_level,
-                private_registries,
-                custom_rules,
-                no_info
-            )
-            
-            all_results.append(status)
-            
-            if status['status'] == 'OUTDATED':
-                outdated_images.append(status)
-            elif status['status'] == 'WARNING':
-                warning_images.append(status)
-            elif status['status'] == 'UNKNOWN':
-                unknown_images.append(status)
+        # Analyze the image using the original function
+        print(f"\n{Fore.CYAN if not args.no_color else ''}Analyzing image {i}/{total_images}: {info['image']}{Style.RESET_ALL if not args.no_color else ''}")
         
-        # Restore stdout if it was redirected
-        if output_format != 'text':
-            sys.stdout.close()
-            sys.stdout = original_stdout
+        # Perform the original analysis
+        status = analyze_image_tags(
+            info['image'],
+            i,
+            total_images,
+            args.threshold,
+            args.level,
+            private_registries,
+            custom_rules,
+            not args.tags  # no_info is the opposite of show_tags
+        )
+        
+        # Add custom tag filtering if tags option is enabled
+        if args.tags and not args.no_info and current_tag:
+            # Get tags from registry
+            tags, _ = get_image_tags(info['image'], private_registries)
+            
+            if tags:
+                # Filter to valid version tags first
+                version_tags = [tag for tag in tags if is_valid_version_tag(tag)]
+                
+                # Then filter to similar tags
+                relevant_tags = filter_similar_tags(version_tags, current_tag)
+                
+                # Sort and display
+                if relevant_tags:
+                    sample_size = min(5, len(relevant_tags))
+                    sorted_tags = sorted(relevant_tags)[:sample_size]
+                    print(f"{Fore.BLUE if not args.no_color else ''}• Similar tags: {', '.join(sorted_tags)}" + 
+                          (f" + {len(relevant_tags) - sample_size} more" if len(relevant_tags) > sample_size else ""))
+        
+        all_results.append(status)
+        
+        if status['status'] == 'OUTDATED':
+            outdated_images.append(status)
+        elif status['status'] == 'WARNING':
+            warning_images.append(status)
+        elif status['status'] == 'UNKNOWN':
+            unknown_images.append(status)
     
     # Add ignored images info to the summary if any were ignored
     if ignored_images:
@@ -300,27 +313,116 @@ regex:^debian:(?!11).*
             'ignored_images': ignored_images
         })
     
-    # Create formatter and generate output
-    formatter = get_formatter(output_format, include_timestamp=include_timestamp)
-    formatted_output = formatter.format(all_results, total_images, original_count)
-    
-    # Save to file if specified
-    if report_file:
-        success = formatter.save_to_file(formatted_output, report_file)
-        if success:
-            print(f"Report saved to: {report_file}")
+    # Show pretty summary table
+    if args.output == 'text' and not args.report_file:
+        # Header for summary
+        if not args.no_color:
+            print(f"\n{Fore.CYAN}▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}                         ANALYSIS SUMMARY                          {Style.RESET_ALL}")
+            print(f"{Fore.CYAN}▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓{Style.RESET_ALL}")
         else:
-            print(f"Failed to save report to: {report_file}")
-    
-    # Print output if it's text format or no file was specified
-    if output_format == 'text' or not report_file:
-        print(formatted_output)
+            print("\n==================================================================")
+            print("                       ANALYSIS SUMMARY                            ")
+            print("==================================================================")
+        
+        # Table header using fixed widths
+        if not args.no_color:
+            print(f"{Fore.WHITE}{'IMAGE':<40} {'STATUS':<20} {'CURRENT':<15} {'→':2} {'RECOMMENDED':<15} {'MESSAGE'}{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}{'-' * 100}{Style.RESET_ALL}")
+        else:
+            print(f"{'IMAGE':<40} {'STATUS':<20} {'CURRENT':<15} → {'RECOMMENDED':<15} {'MESSAGE'}")
+            print(f"{'-' * 100}")
+        
+        # Print each result in a table row
+        for result in all_results:
+            # Skip special entries
+            if result.get('image') == 'IGNORED_IMAGES_SUMMARY':
+                continue
+                
+            # Format image name
+            image_name = result['image']
+            if len(image_name) > 37:
+                image_name = image_name[:34] + "..."
+            
+            # Format status
+            status = result['status']
+            if not args.no_color:
+                if status == 'UP-TO-DATE':
+                    status_display = f"{Fore.GREEN}✓ {status}{Style.RESET_ALL}"
+                elif status == 'OUTDATED':
+                    status_display = f"{Fore.RED}✗ {status}{Style.RESET_ALL}"
+                elif status == 'WARNING':
+                    status_display = f"{Fore.YELLOW}⚠ {status}{Style.RESET_ALL}"
+                else:
+                    status_display = f"{Fore.YELLOW}? {status}{Style.RESET_ALL}"
+            else:
+                if status == 'UP-TO-DATE':
+                    status_display = f"✓ {status}"
+                elif status == 'OUTDATED':
+                    status_display = f"✗ {status}"
+                elif status == 'WARNING':
+                    status_display = f"⚠ {status}"
+                else:
+                    status_display = f"? {status}"
+            
+            # Format version
+            current = result.get('current', '-')
+            recommended = result.get('recommended', '-')
+            
+            # Format message
+            message = result.get('message', '')
+            
+            # Print the row with fixed column widths
+            print(f"{image_name:<40} {status_display:<20} {current:<15} → {recommended:<15} {message}")
+        
+        # Table footer
+        if not args.no_color:
+            print(f"{Fore.CYAN}{'-' * 100}{Style.RESET_ALL}")
+        else:
+            print(f"{'-' * 100}")
+        
+        # Final verdict
+        if outdated_images:
+            if not args.no_color:
+                print(f"\n{Fore.RED}✗ RESULT: OUTDATED - {len(outdated_images)} image(s) need updating{Style.RESET_ALL}")
+            else:
+                print(f"\n✗ RESULT: OUTDATED - {len(outdated_images)} image(s) need updating")
+        elif warning_images or unknown_images:
+            if not args.no_color:
+                print(f"\n{Fore.YELLOW}⚠ RESULT: WARNING - {len(warning_images) + len(unknown_images)} image(s) with warnings{Style.RESET_ALL}")
+            else:
+                print(f"\n⚠ RESULT: WARNING - {len(warning_images) + len(unknown_images)} image(s) with warnings")
+        else:
+            if not args.no_color:
+                print(f"\n{Fore.GREEN}✓ RESULT: SUCCESS - All images are up-to-date{Style.RESET_ALL}")
+            else:
+                print(f"\n✓ RESULT: SUCCESS - All images are up-to-date")
+        
+        # Show execution time
+        elapsed = time.time() - start_time
+        print(f"\nAnalysis completed in {elapsed:.2f} seconds")
+    else:
+        # Create formatter and generate output
+        formatter = get_formatter(args.output, include_timestamp=not args.no_timestamp)
+        formatted_output = formatter.format(all_results, total_images, original_count)
+        
+        # Save to file if specified
+        if args.report_file:
+            success = formatter.save_to_file(formatted_output, args.report_file)
+            if success:
+                print(f"\n{Fore.GREEN if not args.no_color else ''}✓ Report saved to: {args.report_file}{Style.RESET_ALL if not args.no_color else ''}")
+            else:
+                print(f"\n{Fore.RED if not args.no_color else ''}✗ Failed to save report to: {args.report_file}{Style.RESET_ALL if not args.no_color else ''}")
+        
+        # Print output if it's text format or no file was specified
+        if args.output == 'text' or not args.report_file:
+            print(formatted_output)
     
     # Send Slack notification if requested
-    if send_slack:
+    if args.slack_notify:
         additional_info = {}
-        if report_url:
-            additional_info['report_url'] = report_url
+        if args.report_url:
+            additional_info['report_url'] = args.report_url
         
         # Add CI/CD info if available
         if os.environ.get('CI_PIPELINE_URL'):
@@ -329,25 +431,69 @@ regex:^debian:(?!11).*
             additional_info['GitHub Workflow'] = f"{os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{os.environ.get('GITHUB_REPOSITORY')}/actions/runs/{os.environ.get('GITHUB_RUN_ID')}"
         
         # Send notification
+        webhook_url = args.slack_webhook or os.environ.get('SLACK_WEBHOOK_URL')
         success = send_slack_notification(
             all_results,
-            dockerfile_path,
-            webhook_url=slack_webhook,
+            args.dockerfile,
+            webhook_url=webhook_url,
             additional_info=additional_info
         )
         
         if success:
-            print("✅ Slack notification sent successfully")
+            print(f"{Fore.GREEN if not args.no_color else ''}✓ Slack notification sent successfully{Style.RESET_ALL if not args.no_color else ''}")
         else:
-            print("❌ Failed to send Slack notification")
+            print(f"{Fore.RED if not args.no_color else ''}✗ Failed to send Slack notification{Style.RESET_ALL if not args.no_color else ''}")
     
-    # Set exit code
-    if not outdated_images and not warning_images and not unknown_images:
-        sys.exit(0)  # All up-to-date
-    elif outdated_images:
-        sys.exit(1)  # Outdated images found
+    # Return exit code
+    if outdated_images:
+        return 1  # Outdated images found
+    elif warning_images or unknown_images:
+        return 0  # Warnings only, still considered successful
     else:
-        sys.exit(0)  # Warnings only, but still considered successful
+        return 0  # All up-to-date
+
+
+def main():
+    """Main entry point for the application"""
+    args = parse_arguments()
+    
+    if args.command == "github-scan":
+        # Convert argparse namespace to list of args for backward compatibility
+        github_args = []
+        for key, value in vars(args).items():
+            if key != "command" and value is not None:
+                if isinstance(value, bool) and value:
+                    github_args.append(f"--{key}")
+                elif not isinstance(value, bool):
+                    github_args.append(f"--{key}")
+                    github_args.append(str(value))
+        
+        return github_scan(github_args)
+    
+    elif args.command == "gitlab-scan":
+        # Convert argparse namespace to list of args for backward compatibility
+        gitlab_args = []
+        for key, value in vars(args).items():
+            if key != "command" and value is not None:
+                if isinstance(value, bool) and value:
+                    gitlab_args.append(f"--{key}")
+                elif not isinstance(value, bool):
+                    gitlab_args.append(f"--{key}")
+                    github_args.append(str(value))
+        
+        return gitlab_scan(gitlab_args)
+    
+    elif args.command == "analyze":
+        return analyze_dockerfile(args)
+    
+    else:
+        print("No valid command specified. Use --help for usage information.")
+        return 1
+
 
 if __name__ == "__main__":
-    main()
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        print("\nInterrupted by user.")
+        sys.exit(130)
